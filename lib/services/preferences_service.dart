@@ -3,23 +3,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 class PreferencesService {
   static const String _hiddenSongsKey = 'hidden_songs';
   static const String _favoriteSongsKey = 'favorite_songs';
-  static const String _lastPlayingSongKey = 'last_playing_song';
-  static const String _playbackPositionKey = 'playback_position';
+  static const String _favoriteAlbumsKey = 'favorite_albums';
+  static const String _lastScanTimeKey = 'last_scan_time';
 
-  // Cache the SharedPreferences instance to avoid repeated async calls
   static SharedPreferences? _prefsInstance;
 
-  // Initialize preferences - call this in main()
   static Future<void> initialize() async {
     try {
       _prefsInstance = await SharedPreferences.getInstance();
     } catch (e) {
       print('Error initializing SharedPreferences: $e');
-      // Continue without preferences if initialization fails
     }
   }
 
-  // Get SharedPreferences instance with error handling
   static Future<SharedPreferences?> _getPrefs() async {
     if (_prefsInstance != null) {
       return _prefsInstance;
@@ -34,7 +30,7 @@ class PreferencesService {
     }
   }
 
-  // Get hidden songs list
+  // Hidden Songs
   static Future<List<int>> getHiddenSongs() async {
     try {
       final prefs = await _getPrefs();
@@ -49,7 +45,6 @@ class PreferencesService {
     }
   }
 
-  // Save hidden songs list
   static Future<bool> saveHiddenSongs(List<int> hiddenSongs) async {
     try {
       final prefs = await _getPrefs();
@@ -63,7 +58,6 @@ class PreferencesService {
     }
   }
 
-  // Add song to hidden list
   static Future<bool> hideSong(int songId) async {
     try {
       final hiddenSongs = await getHiddenSongs();
@@ -78,7 +72,6 @@ class PreferencesService {
     }
   }
 
-  // Remove song from hidden list
   static Future<bool> unhideSong(int songId) async {
     try {
       final hiddenSongs = await getHiddenSongs();
@@ -90,7 +83,18 @@ class PreferencesService {
     }
   }
 
-  // Get favorite songs list
+  static Future<bool> clearHiddenSongs() async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return false;
+      return await prefs.remove(_hiddenSongsKey);
+    } catch (e) {
+      print('Error clearing hidden songs: $e');
+      return false;
+    }
+  }
+
+  // Favorite Songs
   static Future<List<int>> getFavoriteSongs() async {
     try {
       final prefs = await _getPrefs();
@@ -105,7 +109,6 @@ class PreferencesService {
     }
   }
 
-  // Save favorite songs list
   static Future<bool> saveFavoriteSongs(List<int> favoriteSongs) async {
     try {
       final prefs = await _getPrefs();
@@ -119,7 +122,6 @@ class PreferencesService {
     }
   }
 
-  // Toggle favorite
   static Future<bool> toggleFavorite(int songId) async {
     try {
       final favorites = await getFavoriteSongs();
@@ -135,7 +137,75 @@ class PreferencesService {
     }
   }
 
-  // Clear all preferences
+  // Favorite Albums
+  static Future<List<String>> getFavoriteAlbums() async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return [];
+      
+      final List<String>? favoriteList = prefs.getStringList(_favoriteAlbumsKey);
+      return favoriteList ?? [];
+    } catch (e) {
+      print('Error getting favorite albums: $e');
+      return [];
+    }
+  }
+
+  static Future<bool> saveFavoriteAlbums(List<String> favoriteAlbums) async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return false;
+      
+      return await prefs.setStringList(_favoriteAlbumsKey, favoriteAlbums);
+    } catch (e) {
+      print('Error saving favorite albums: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> toggleFavoriteAlbum(String albumId) async {
+    try {
+      final favorites = await getFavoriteAlbums();
+      if (favorites.contains(albumId)) {
+        favorites.remove(albumId);
+      } else {
+        favorites.add(albumId);
+      }
+      return await saveFavoriteAlbums(favorites);
+    } catch (e) {
+      print('Error toggling favorite album: $e');
+      return false;
+    }
+  }
+
+  // Last Scan Time
+  static Future<DateTime?> getLastScanTime() async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return null;
+      
+      final String? timeString = prefs.getString(_lastScanTimeKey);
+      if (timeString == null) return null;
+      return DateTime.parse(timeString);
+    } catch (e) {
+      print('Error getting last scan time: $e');
+      return null;
+    }
+  }
+
+  static Future<bool> saveLastScanTime(DateTime time) async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return false;
+      
+      return await prefs.setString(_lastScanTimeKey, time.toIso8601String());
+    } catch (e) {
+      print('Error saving last scan time: $e');
+      return false;
+    }
+  }
+
+  // Clear All
   static Future<bool> clearAll() async {
     try {
       final prefs = await _getPrefs();
@@ -143,18 +213,6 @@ class PreferencesService {
       return await prefs.clear();
     } catch (e) {
       print('Error clearing preferences: $e');
-      return false;
-    }
-  }
-
-  // Clear only hidden songs
-  static Future<bool> clearHiddenSongs() async {
-    try {
-      final prefs = await _getPrefs();
-      if (prefs == null) return false;
-      return await prefs.remove(_hiddenSongsKey);
-    } catch (e) {
-      print('Error clearing hidden songs: $e');
       return false;
     }
   }

@@ -22,6 +22,30 @@ final songsProvider = FutureProvider<List<SongModel>>((ref) async {
   return songs.map((song) => SongModel.fromOnAudioQuery(song)).toList();
 });
 
+// Albums provider
+final albumsProvider = FutureProvider<List<AlbumModel>>((ref) async {
+  final audioQuery = ref.watch(audioQueryProvider);
+  return await audioQuery.queryAlbums(
+    sortType: AlbumSortType.ALBUM,
+    orderType: OrderType.ASC_OR_SMALLER,
+    uriType: UriType.EXTERNAL,
+    ignoreCase: true,
+  );
+});
+
+// Songs by album provider
+final songsByAlbumProvider = FutureProvider.family<List<SongModel>, String>((ref, albumId) async {
+  final audioQuery = ref.watch(audioQueryProvider);
+  final songs = await audioQuery.queryAudiosFrom(
+    AudiosFromType.ALBUM_ID,
+    albumId,
+    sortType: SongSortType.TITLE,
+    orderType: OrderType.ASC_OR_SMALLER,
+  );
+  
+  return songs.map((song) => SongModel.fromOnAudioQuery(song)).toList();
+});
+
 // Search query provider
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
@@ -39,6 +63,23 @@ final filteredSongsProvider = Provider<AsyncValue<List<SongModel>>>((ref) {
       return song.title.toLowerCase().contains(searchQuery) ||
              song.artist.toLowerCase().contains(searchQuery) ||
              (song.album?.toLowerCase().contains(searchQuery) ?? false);
+    }).toList();
+  });
+});
+
+// Filtered albums based on search
+final filteredAlbumsProvider = Provider<AsyncValue<List<AlbumModel>>>((ref) {
+  final albumsAsync = ref.watch(albumsProvider);
+  final searchQuery = ref.watch(searchQueryProvider).toLowerCase();
+  
+  return albumsAsync.whenData((albums) {
+    if (searchQuery.isEmpty) {
+      return albums;
+    }
+    
+    return albums.where((album) {
+      return album.album.toLowerCase().contains(searchQuery) ||
+             (album.artist?.toLowerCase().contains(searchQuery) ?? false);
     }).toList();
   });
 });
@@ -82,6 +123,30 @@ class FavoritesNotifier extends StateNotifier<List<int>> {
     await PreferencesService.toggleFavorite(songId);
     state = await PreferencesService.getFavoriteSongs();
   }
+
+  bool isFavorite(int songId) => state.contains(songId);
+}
+
+// Favorite Albums provider
+final favoriteAlbumsProvider = StateNotifierProvider<FavoriteAlbumsNotifier, List<String>>((ref) {
+  return FavoriteAlbumsNotifier();
+});
+
+class FavoriteAlbumsNotifier extends StateNotifier<List<String>> {
+  FavoriteAlbumsNotifier() : super([]) {
+    _loadFavoriteAlbums();
+  }
+
+  Future<void> _loadFavoriteAlbums() async {
+    state = await PreferencesService.getFavoriteAlbums();
+  }
+
+  Future<void> toggleFavoriteAlbum(String albumId) async {
+    await PreferencesService.toggleFavoriteAlbum(albumId);
+    state = await PreferencesService.getFavoriteAlbums();
+  }
+
+  bool isFavoriteAlbum(String albumId) => state.contains(albumId);
 }
 
 // Hidden songs provider with SharedPreferences
@@ -112,3 +177,6 @@ class HiddenSongsNotifier extends StateNotifier<List<int>> {
     state = [];
   }
 }
+
+// Library refresh trigger
+final libraryRefreshProvider = StateProvider<int>((ref) => 0);

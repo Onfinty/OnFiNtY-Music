@@ -2,7 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
-/// A cached artwork widget that prevents image reloading and shaking
+/// A cached artwork widget with improved quality and memory management
 class CachedArtworkWidget extends StatefulWidget {
   final int id;
   final ArtworkType type;
@@ -27,11 +27,27 @@ class CachedArtworkWidget extends StatefulWidget {
 
   @override
   State<CachedArtworkWidget> createState() => _CachedArtworkWidgetState();
+
+  // Public static methods
+  static void clearCache() {
+    _CachedArtworkWidgetState._clearCacheStatic();
+  }
+
+  static int getCacheSize() {
+    return _CachedArtworkWidgetState._getCurrentCacheSize();
+  }
+
+  static int getCacheCount() {
+    return _CachedArtworkWidgetState._getCacheCountStatic();
+  }
 }
 
 class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
     with AutomaticKeepAliveClientMixin {
   static final Map<String, Uint8List> _artworkCache = {};
+  static const int _maxCacheSize = 50 * 1024 * 1024; // 50MB max cache
+  static int _currentCacheSize = 0;
+  
   Uint8List? _cachedImage;
   bool _isLoading = true;
   bool _hasError = false;
@@ -48,13 +64,12 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
   @override
   void didUpdateWidget(CachedArtworkWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Only reload if the ID actually changed
     if (oldWidget.id != widget.id) {
       _loadArtwork();
     }
   }
 
-  String get _cacheKey => '${widget.type.name}_${widget.id}';
+  String get _cacheKey => '${widget.type.name}_${widget.id}_${widget.width.toInt()}x${widget.height.toInt()}';
 
   Future<void> _loadArtwork() async {
     // Check cache first
@@ -70,14 +85,26 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
     }
 
     try {
+      // Request higher quality for larger images
+      final requestedQuality = widget.width > 200 ? 100 : 
+                              widget.width > 100 ? 90 : 80;
+      
       final artwork = await OnAudioQuery().queryArtwork(
         widget.id,
         widget.type,
-        quality: widget.quality,
+        quality: requestedQuality,
+        size: widget.width > 200 ? 500 : 200, // Request larger source image
       );
 
       if (artwork != null && artwork.isNotEmpty) {
+        // Check cache size and clean if necessary
+        if (_currentCacheSize + artwork.length > _maxCacheSize) {
+          _cleanCache();
+        }
+        
         _artworkCache[_cacheKey] = artwork;
+        _currentCacheSize += artwork.length;
+        
         if (mounted) {
           setState(() {
             _cachedImage = artwork;
@@ -103,9 +130,25 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
     }
   }
 
+  /// Clean oldest cache entries to free memory
+  static void _cleanCache() {
+    if (_artworkCache.isEmpty) return;
+    
+    // Remove 30% of cache
+    final entriesToRemove = (_artworkCache.length * 0.3).ceil();
+    final keys = _artworkCache.keys.take(entriesToRemove).toList();
+    
+    for (var key in keys) {
+      final data = _artworkCache.remove(key);
+      if (data != null) {
+        _currentCacheSize -= data.length;
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    super.build(context);
 
     Widget child;
 
@@ -164,7 +207,9 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
         width: widget.width,
         height: widget.height,
         fit: widget.fit,
-        gaplessPlayback: true, // Critical: prevents flashing between images
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+        isAntiAlias: true,
         errorBuilder: (context, error, stackTrace) {
           return widget.nullArtworkWidget ??
               Container(
@@ -191,7 +236,6 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
       );
     }
 
-    // Wrap in RepaintBoundary to prevent unnecessary repaints
     return RepaintBoundary(
       child: widget.borderRadius != null
           ? ClipRRect(
@@ -202,22 +246,13 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
     );
   }
 
-  /// Clear all cached artwork (useful for memory management)
-  static void clearCache() {
+  // Static accessors for cache management
+  static void _clearCacheStatic() {
     _artworkCache.clear();
+    _currentCacheSize = 0;
   }
 
-  /// Clear specific artwork from cache
-  static void clearArtwork(String key) {
-    _artworkCache.remove(key);
-  }
-
-  /// Get cache size in bytes
-  static int getCacheSize() {
-    int totalSize = 0;
-    for (var artwork in _artworkCache.values) {
-      totalSize += artwork.length;
-    }
-    return totalSize;
-  }
+  static int _getCurrentCacheSize() => _currentCacheSize;
+  
+  static int _getCacheCountStatic() => _artworkCache.length;
 }

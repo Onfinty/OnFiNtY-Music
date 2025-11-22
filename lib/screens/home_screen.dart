@@ -1,7 +1,10 @@
 import 'package:draggable_scrollbar/draggable_scrollbar.dart';
+import 'package:fitapp/screens/album_detail_screen.dart';
+import 'package:fitapp/widgets/cached_artwork_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:on_audio_query/on_audio_query.dart' hide SongModel;
 import 'package:skeletonizer/skeletonizer.dart';
 
 import '../models/song_model.dart';
@@ -122,17 +125,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildTabContent(
-    AsyncValue<List<SongModel>> filteredSongs,
-    List<int> hiddenSongs,
-  ) {
-    if (_currentTab == MusicTab.albums) {
-      return const Center(
-        child: Text(
-          'Albums view coming soon!',
-          style: TextStyle(color: Colors.grey, fontSize: 16),
-        ),
-      );
-    }
+  AsyncValue<List<SongModel>> filteredSongs,
+  List<int> hiddenSongs,
+) {
+  if (_currentTab == MusicTab.albums) {
+    return _buildAlbumsView(); // Call the new albums view
+  }
 
     return filteredSongs.when(
       data: (songs) {
@@ -260,6 +258,322 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       },
     );
   }
+
+
+Widget _buildAlbumsView() {
+  final albumsAsync = ref.watch(filteredAlbumsProvider);
+  final favoriteAlbums = ref.watch(favoriteAlbumsProvider);
+  
+  return albumsAsync.when(
+    data: (albums) {
+      // Filter to show only favorite albums
+      final displayAlbums = albums
+          .where((album) => favoriteAlbums.contains(album.id.toString()))
+          .toList();
+      
+      if (displayAlbums.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.album, size: 80, color: Colors.grey[700]),
+              const SizedBox(height: 20),
+              const Text(
+                'No favorite albums yet',
+                style: TextStyle(color: Colors.grey, fontSize: 18),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Go to all albums and favorite some!',
+                style: TextStyle(color: Colors.grey[600], fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: () => _showAllAlbumsBottomSheet(),
+                icon: const Icon(Icons.library_music),
+                label: const Text('Browse All Albums'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B5CF6),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+      
+      return GridView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(16),
+        physics: const BouncingScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.75,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+        ),
+        itemCount: displayAlbums.length,
+        itemBuilder: (context, index) {
+          final album = displayAlbums[index];
+          return _buildAlbumCard(album);
+        },
+      );
+    },
+    loading: () => const Center(
+      child: CircularProgressIndicator(color: Color(0xFF8B5CF6)),
+    ),
+    error: (_, __) => const Center(
+      child: Text('Error loading albums', style: TextStyle(color: Colors.grey)),
+    ),
+  );
+}
+
+Widget _buildAlbumCard(AlbumModel album) {
+  final favoriteAlbums = ref.watch(favoriteAlbumsProvider);
+  final isFavorite = favoriteAlbums.contains(album.id.toString());
+  
+  return GestureDetector(
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AlbumDetailScreen(album: album),
+        ),
+      );
+    },
+    onLongPress: () {
+      ref
+          .read(favoriteAlbumsProvider.notifier)
+          .toggleFavoriteAlbum(album.id.toString());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isFavorite ? 'Removed from favorites' : 'Added to favorites',
+          ),
+          backgroundColor: const Color(0xFF8B5CF6),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    },
+    child: Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isFavorite
+              ? const Color(0xFF8B5CF6)
+              : Colors.white.withValues(alpha: 0.1),
+          width: isFavorite ? 2 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
+                  child: CachedArtworkWidget(
+                    id: album.id,
+                    type: ArtworkType.ALBUM,
+                    width: double.infinity,
+                    height: double.infinity,
+                    quality: 100,
+                    fit: BoxFit.cover,
+                    nullArtworkWidget: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            const Color(0xFF8B5CF6).withValues(alpha: 0.3),
+                            const Color(0xFF6D28D9).withValues(alpha: 0.3),
+                          ],
+                        ),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.album,
+                          size: 60,
+                          color: Color(0xFF8B5CF6),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (isFavorite)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.favorite,
+                        color: Colors.red,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  album.album,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  album.artist ?? 'Unknown',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.music_note,
+                      size: 12,
+                      color: Colors.grey[700],
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${album.numOfSongs} songs',
+                      style: TextStyle(
+                        color: Colors.grey[700],
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+void _showAllAlbumsBottomSheet() {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (context) {
+      return DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) {
+          return ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(30),
+            ),
+            child: Container(
+              color: Colors.black,
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.1),
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'All Albums',
+                          style: TextStyle(
+                            color: Color(0xFF8B5CF6),
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Lobster',
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Consumer(
+                      builder: (context, ref, child) {
+                        final albumsAsync = ref.watch(albumsProvider);
+                        return albumsAsync.when(
+                          data: (albums) {
+                            return GridView.builder(
+                              controller: scrollController,
+                              padding: const EdgeInsets.all(16),
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.75,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                              ),
+                              itemCount: albums.length,
+                              itemBuilder: (context, index) {
+                                return _buildAlbumCard(albums[index]);
+                              },
+                            );
+                          },
+                          loading: () => const Center(
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF8B5CF6),
+                            ),
+                          ),
+                          error: (_, __) => const Center(
+                            child: Text(
+                              'Error loading albums',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
 
   void _showSongOptions(BuildContext context, SongModel song) {
     final hiddenSongs = ref.read(hiddenSongsProvider);

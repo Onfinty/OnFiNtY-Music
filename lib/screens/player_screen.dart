@@ -21,7 +21,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     with SingleTickerProviderStateMixin {
   double _dragOffset = 0.0;
   bool _isDragging = false;
-  late AnimationController _transitionController;
+  late AnimationController _albumRotationController;
   int? _lastSongId;
 
   @override
@@ -29,9 +29,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     super.initState();
     _setupAudioListeners();
 
-    _transitionController = AnimationController(
+    // Smooth continuous rotation for playing state
+    _albumRotationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(seconds: 20),
     );
   }
 
@@ -53,6 +54,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     audioService.playerStateStream.listen((state) {
       if (mounted) {
         ref.read(isPlayingProvider.notifier).state = state.playing;
+        
+        // Animate rotation based on play state
+        if (state.playing) {
+          _albumRotationController.repeat();
+        } else {
+          _albumRotationController.stop();
+        }
       }
     });
 
@@ -83,8 +91,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } else {
         await audioService.skipToNext();
       }
-      await _transitionController.forward();
-      _transitionController.reset();
     }
 
     setState(() {
@@ -101,7 +107,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
-    _transitionController.dispose();
+    _albumRotationController.dispose();
     super.dispose();
   }
 
@@ -128,7 +134,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _lastSongId = currentSong.id;
     }
 
-    // Get screen height to calculate proper spacing
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenHeight < 700;
@@ -192,7 +197,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           child: SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Calculate album art size based on available space
                 final availableHeight = constraints.maxHeight;
                 final albumArtSize = (screenWidth * 0.75).clamp(200.0, 350.0);
                 
@@ -209,67 +213,57 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         children: [
                           SizedBox(height: isSmallScreen ? 10 : 20),
 
-                          // Album Art
+                          // Album Art with smooth rotation
                           Transform.translate(
-                            offset: Offset(_dragOffset, 0),
-                            child: RepaintBoundary(
-                              child: Container(
-                                key: ValueKey('player_album_${currentSong.id}'),
-                                width: albumArtSize,
-                                height: albumArtSize,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(30),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFF8B5CF6)
-                                          .withValues(alpha: 0.4),
-                                      blurRadius: 40,
-                                      spreadRadius: 5,
-                                    ),
-                                  ],
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(30),
-                                  child: BackdropFilter(
-                                    filter: ImageFilter.blur(
-                                        sigmaX: 10, sigmaY: 10),
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        border: Border.all(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.2),
-                                          width: 2,
+                            offset: Offset(_dragOffset * 0.3, 0), // Reduced drag for smoothness
+                            child: AnimatedScale(
+                              scale: _isDragging ? 0.95 : 1.0,
+                              duration: const Duration(milliseconds: 200),
+                              child: RotationTransition(
+                                turns: _albumRotationController,
+                                child: RepaintBoundary(
+                                  key: ValueKey('album_${currentSong.id}'),
+                                  child: Container(
+                                    width: albumArtSize,
+                                    height: albumArtSize,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(albumArtSize / 2),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF8B5CF6)
+                                              .withValues(alpha: isPlaying ? 0.5 : 0.3),
+                                          blurRadius: isPlaying ? 50 : 40,
+                                          spreadRadius: isPlaying ? 8 : 5,
                                         ),
-                                        borderRadius: BorderRadius.circular(30),
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(28),
-                                        child: CachedArtworkWidget(
-                                          id: currentSong.id,
-                                          type: ArtworkType.AUDIO,
-                                          quality: 100,
-                                          width: albumArtSize,
-                                          height: albumArtSize,
-                                          fit: BoxFit.cover,
-                                          nullArtworkWidget: Container(
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
-                                                colors: [
-                                                  const Color(0xFF8B5CF6)
-                                                      .withValues(alpha: 0.5),
-                                                  const Color(0xFF6D28D9)
-                                                      .withValues(alpha: 0.5),
-                                                ],
-                                              ),
+                                      ],
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(albumArtSize / 2),
+                                      child: CachedArtworkWidget(
+                                        id: currentSong.id,
+                                        type: ArtworkType.AUDIO,
+                                        quality: 100,
+                                        width: albumArtSize,
+                                        height: albumArtSize,
+                                        fit: BoxFit.cover,
+                                        nullArtworkWidget: Container(
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                              colors: [
+                                                const Color(0xFF8B5CF6)
+                                                    .withValues(alpha: 0.5),
+                                                const Color(0xFF6D28D9)
+                                                    .withValues(alpha: 0.5),
+                                              ],
                                             ),
-                                            child: const Center(
-                                              child: Icon(
-                                                Icons.music_note,
-                                                size: 120,
-                                                color: Color(0xFF8B5CF6),
-                                              ),
+                                          ),
+                                          child: const Center(
+                                            child: Icon(
+                                              Icons.music_note,
+                                              size: 120,
+                                              color: Color(0xFF8B5CF6),
                                             ),
                                           ),
                                         ),
@@ -284,87 +278,71 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           SizedBox(height: isSmallScreen ? 20 : 40),
 
                           // Song Info Card
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                              child: Container(
-                                padding: EdgeInsets.all(isSmallScreen ? 15 : 20),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      Colors.white.withValues(alpha: 0.1),
-                                      Colors.white.withValues(alpha: 0.05),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 400),
+                            transitionBuilder: (child, animation) {
+                              return FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: Tween<Offset>(
+                                    begin: const Offset(0, 0.1),
+                                    end: Offset.zero,
+                                  ).animate(CurvedAnimation(
+                                    parent: animation,
+                                    curve: Curves.easeOutCubic,
+                                  )),
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: ClipRRect(
+                              key: ValueKey('info_${currentSong.id}'),
+                              borderRadius: BorderRadius.circular(20),
+                              child: BackdropFilter(
+                                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                                child: Container(
+                                  padding: EdgeInsets.all(isSmallScreen ? 15 : 20),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Colors.white.withValues(alpha: 0.1),
+                                        Colors.white.withValues(alpha: 0.05),
+                                      ],
+                                    ),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(alpha: 0.2),
+                                      width: 1,
+                                    ),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        currentSong.title,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: isSmallScreen ? 22 : 26,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.5,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        currentSong.displayArtist,
+                                        style: TextStyle(
+                                          color: Colors.grey[300],
+                                          fontSize: isSmallScreen ? 16 : 18,
+                                          letterSpacing: 0.3,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
                                     ],
                                   ),
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.2),
-                                    width: 1,
-                                  ),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Column(
-                                  children: [
-                                    songChanged
-                                        ? AnimatedSwitcher(
-                                            duration: const Duration(
-                                                milliseconds: 300),
-                                            child: Text(
-                                              currentSong.title,
-                                              key: ValueKey(
-                                                  'title_${currentSong.id}'),
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: isSmallScreen ? 22 : 26,
-                                                fontWeight: FontWeight.bold,
-                                                letterSpacing: 0.5,
-                                              ),
-                                              textAlign: TextAlign.center,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          )
-                                        : Text(
-                                            currentSong.title,
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: isSmallScreen ? 22 : 26,
-                                              fontWeight: FontWeight.bold,
-                                              letterSpacing: 0.5,
-                                            ),
-                                            textAlign: TextAlign.center,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                    const SizedBox(height: 8),
-                                    songChanged
-                                        ? AnimatedSwitcher(
-                                            duration: const Duration(
-                                                milliseconds: 300),
-                                            child: Text(
-                                              currentSong.displayArtist,
-                                              key: ValueKey(
-                                                  'artist_${currentSong.id}'),
-                                              style: TextStyle(
-                                                color: Colors.grey[300],
-                                                fontSize: isSmallScreen ? 16 : 18,
-                                                letterSpacing: 0.3,
-                                              ),
-                                              textAlign: TextAlign.center,
-                                            ),
-                                          )
-                                        : Text(
-                                            currentSong.displayArtist,
-                                            style: TextStyle(
-                                              color: Colors.grey[300],
-                                              fontSize: isSmallScreen ? 16 : 18,
-                                              letterSpacing: 0.3,
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                  ],
                                 ),
                               ),
                             ),
@@ -686,6 +664,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       title: 'Share',
                       onTap: () {
                         Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Share feature coming soon!'),
+                            backgroundColor: Color(0xFF8B5CF6),
+                          ),
+                        );
                       },
                     ),
                     _buildMenuItem(
@@ -696,6 +680,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                         _showSpeedDialog(context);
                       },
                     ),
+                    _buildMenuItem(
+                      icon: Icons.info_outline,
+                      title: 'Song Info',
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSongInfo(context, song);
+                      },
+                    ),
+                    const SizedBox(height: 10),
                   ],
                 ),
               ),
@@ -720,6 +713,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _showSpeedDialog(BuildContext context) {
     final audioService = ref.read(audioServiceProvider);
+    final currentSpeed = ref.read(playbackSpeedProvider);
+    
     showDialog(
       context: context,
       builder: (context) {
@@ -729,14 +724,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             backgroundColor: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text('Playback Speed',
-                style: TextStyle(color: Colors.white)),
+            title: const Text(
+              'Playback Speed',
+              style: TextStyle(color: Colors.white),
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((speed) {
+                final isSelected = currentSpeed == speed;
                 return ListTile(
-                  title: Text('${speed}x',
-                      style: const TextStyle(color: Colors.white)),
+                  leading: isSelected
+                      ? const Icon(Icons.check, color: Color(0xFF8B5CF6))
+                      : const SizedBox(width: 24),
+                  title: Text(
+                    '${speed}x',
+                    style: TextStyle(
+                      color: isSelected ? const Color(0xFF8B5CF6) : Colors.white,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
                   onTap: () {
                     audioService.setSpeed(speed);
                     ref.read(playbackSpeedProvider.notifier).state = speed;
@@ -748,6 +754,78 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ),
         );
       },
+    );
+  }
+
+  void _showSongInfo(BuildContext context, SongModel song) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: AlertDialog(
+            backgroundColor: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text(
+              'Song Information',
+              style: TextStyle(
+                color: Color(0xFF8B5CF6),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfoRow('Title', song.title),
+                const SizedBox(height: 12),
+                _buildInfoRow('Artist', song.displayArtist),
+                const SizedBox(height: 12),
+                _buildInfoRow('Album', song.album ?? 'Unknown'),
+                const SizedBox(height: 12),
+                _buildInfoRow('Duration', song.formattedDuration),
+                const SizedBox(height: 12),
+                _buildInfoRow('ID', song.id.toString()),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  'Close',
+                  style: TextStyle(color: Color(0xFF8B5CF6)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+          ),
+        ),
+      ],
     );
   }
 }
