@@ -34,7 +34,7 @@ class SettingsScreen extends ConsumerWidget {
               _buildListTile(
                 icon: Icons.music_note,
                 title: 'OnFiNtY',
-                subtitle: 'Version 1.0.0',
+                subtitle: 'Version 1.0.5',
                 onTap: () {},
               ),
               _buildListTile(
@@ -68,7 +68,14 @@ class SettingsScreen extends ConsumerWidget {
                 icon: Icons.headphones,
                 title: 'Audio Quality',
                 subtitle: 'High quality',
-                onTap: () {},
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Audio quality set to high!'),
+                      backgroundColor: Color(0xFF8B5CF6),
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -83,7 +90,7 @@ class SettingsScreen extends ConsumerWidget {
                 onTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Scanning for music...'),
+                      content: Text('Music library refreshed!'),
                       backgroundColor: Color(0xFF8B5CF6),
                     ),
                   );
@@ -141,14 +148,8 @@ class SettingsScreen extends ConsumerWidget {
   }) {
     return ListTile(
       leading: Icon(icon, color: const Color(0xFF8B5CF6)),
-      title: Text(
-        title,
-        style: const TextStyle(color: Colors.white),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(color: Colors.grey[600]),
-      ),
+      title: Text(title, style: const TextStyle(color: Colors.white)),
+      subtitle: Text(subtitle, style: TextStyle(color: Colors.grey[600])),
       trailing: const Icon(Icons.chevron_right, color: Colors.grey),
       onTap: onTap,
     );
@@ -178,8 +179,9 @@ class SettingsScreen extends ConsumerWidget {
             '• Background playback\n'
             '• Notification controls\n'
             '• Fast search\n'
-            '• Responsive design\n\n'
-            'Version 1.0.0',
+            '• Responsive design\n'
+            '• Made by Kyrillos sameh\n'
+            'Version 1.0.5',
             style: TextStyle(color: Colors.white70),
           ),
           actions: [
@@ -228,10 +230,7 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 );
               },
-              child: const Text(
-                'Clear',
-                style: TextStyle(color: Colors.red),
-              ),
+              child: const Text('Clear', style: TextStyle(color: Colors.red)),
             ),
           ],
         );

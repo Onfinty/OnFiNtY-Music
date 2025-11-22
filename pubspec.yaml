@@ -21,6 +21,8 @@ dependencies:
   on_audio_query: ^2.9.0
   audio_service: ^0.18.18
   just_audio: ^0.10.5
+  draggable_scrollbar: ^0.1.0
+  shared_preferences: ^2.5.3
 
 
 

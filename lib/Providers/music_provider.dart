@@ -3,17 +3,18 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:on_audio_query/on_audio_query.dart' hide SongModel;
 import '../models/song_model.dart';
 import '../services/audio_service.dart';
+import '../services/preferences_service.dart';
 
 // Audio query instance
 final audioQueryProvider = Provider((ref) => OnAudioQuery());
 
-// All songs provider
+// All songs provider - sorted by date added (newest first)
 final songsProvider = FutureProvider<List<SongModel>>((ref) async {
   final audioQuery = ref.watch(audioQueryProvider);
   
   final songs = await audioQuery.querySongs(
-    sortType: SongSortType.TITLE,
-    orderType: OrderType.ASC_OR_SMALLER,
+    sortType: SongSortType.DATE_ADDED,
+    orderType: OrderType.DESC_OR_GREATER,
     uriType: UriType.EXTERNAL,
     ignoreCase: true,
   );
@@ -35,9 +36,9 @@ final filteredSongsProvider = Provider<AsyncValue<List<SongModel>>>((ref) {
     }
     
     return songs.where((song) {
-      return song.title.toLowerCase().startsWith(searchQuery) ||
-             song.artist.toLowerCase().startsWith(searchQuery) ||
-             song.album?.toLowerCase().startsWith(searchQuery) == true;
+      return song.title.toLowerCase().contains(searchQuery) ||
+             song.artist.toLowerCase().contains(searchQuery) ||
+             (song.album?.toLowerCase().contains(searchQuery) ?? false);
     }).toList();
   });
 });
@@ -57,11 +58,57 @@ final currentPositionProvider = StateProvider<Duration>((ref) => Duration.zero);
 // Current duration provider
 final currentDurationProvider = StateProvider<Duration>((ref) => Duration.zero);
 
-// Loop mode provider - using LoopMode from audio_service.dart
+// Loop mode provider
 final loopModeProvider = StateProvider<LoopMode>((ref) => LoopMode.off);
 
 // Playback speed provider
 final playbackSpeedProvider = StateProvider<double>((ref) => 1.0);
 
-// Favorites provider (simple list for now)
-final favoritesProvider = StateProvider<List<int>>((ref) => []);
+// Favorites provider with SharedPreferences
+final favoritesProvider = StateNotifierProvider<FavoritesNotifier, List<int>>((ref) {
+  return FavoritesNotifier();
+});
+
+class FavoritesNotifier extends StateNotifier<List<int>> {
+  FavoritesNotifier() : super([]) {
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    state = await PreferencesService.getFavoriteSongs();
+  }
+
+  Future<void> toggleFavorite(int songId) async {
+    await PreferencesService.toggleFavorite(songId);
+    state = await PreferencesService.getFavoriteSongs();
+  }
+}
+
+// Hidden songs provider with SharedPreferences
+final hiddenSongsProvider = StateNotifierProvider<HiddenSongsNotifier, List<int>>((ref) {
+  return HiddenSongsNotifier();
+});
+
+class HiddenSongsNotifier extends StateNotifier<List<int>> {
+  HiddenSongsNotifier() : super([]) {
+    _loadHiddenSongs();
+  }
+
+  Future<void> _loadHiddenSongs() async {
+    state = await PreferencesService.getHiddenSongs();
+  }
+
+  Future<void> toggleHidden(int songId) async {
+    if (state.contains(songId)) {
+      await PreferencesService.unhideSong(songId);
+    } else {
+      await PreferencesService.hideSong(songId);
+    }
+    state = await PreferencesService.getHiddenSongs();
+  }
+
+  Future<void> clearAll() async {
+    await PreferencesService.clearHiddenSongs();
+    state = [];
+  }
+}

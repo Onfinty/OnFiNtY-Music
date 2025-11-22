@@ -1,4 +1,3 @@
-
 import 'package:just_audio/just_audio.dart' as ja;
 import 'package:audio_service/audio_service.dart';
 import '../models/song_model.dart';
@@ -15,6 +14,15 @@ class AudioPlayerService {
   Stream<Duration> get positionStream => _audioPlayer.positionStream;
   Stream<Duration?> get durationStream => _audioPlayer.durationStream;
   Stream<ja.PlayerState> get playerStateStream => _audioPlayer.playerStateStream;
+
+  AudioPlayerService() {
+    // Listen to current index changes
+    _audioPlayer.currentIndexStream.listen((index) {
+      if (index != null) {
+        _currentIndex = index;
+      }
+    });
+  }
 
   Future<void> setPlaylist(List<SongModel> songs, int startIndex) async {
     _playlist = songs;
@@ -36,7 +44,11 @@ class AudioPlayerService {
       }).toList(),
     );
 
-    await _audioPlayer.setAudioSource(audioSource, initialIndex: startIndex);
+    await _audioPlayer.setAudioSource(
+      audioSource, 
+      initialIndex: startIndex,
+      preload: true,
+    );
   }
 
   Future<void> play() async {
@@ -53,15 +65,15 @@ class AudioPlayerService {
 
   Future<void> skipToNext() async {
     if (_currentIndex < _playlist.length - 1) {
-      _currentIndex++;
       await _audioPlayer.seekToNext();
+      _currentIndex = _audioPlayer.currentIndex ?? _currentIndex + 1;
     }
   }
 
   Future<void> skipToPrevious() async {
     if (_currentIndex > 0) {
-      _currentIndex--;
       await _audioPlayer.seekToPrevious();
+      _currentIndex = _audioPlayer.currentIndex ?? _currentIndex - 1;
     }
   }
 

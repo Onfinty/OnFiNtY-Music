@@ -1,25 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart' hide SongModel;
 import '../models/song_model.dart';
+import 'cached_artwork_widget.dart';
 
 class SongTile extends StatelessWidget {
   final SongModel song;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   const SongTile({
     super.key,
     required this.song,
     required this.onTap,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: QueryArtworkWidget(
+    return RepaintBoundary(
+      child: ListTile(
+        leading: CachedArtworkWidget(
           id: song.id,
           type: ArtworkType.AUDIO,
+          width: 50,
+          height: 50,
+          quality: 100,
+          fit: BoxFit.cover,
+          borderRadius: BorderRadius.circular(8),
           nullArtworkWidget: Container(
             width: 50,
             height: 50,
@@ -40,38 +47,36 @@ class SongTile extends StatelessWidget {
               size: 28,
             ),
           ),
-          artworkWidth: 50,
-          artworkHeight: 50,
-          artworkFit: BoxFit.cover,
         ),
-      ),
-      title: Text(
-        song.title,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
+        title: Text(
+          song.title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        song.displayArtist,
-        style: TextStyle(
-          color: Colors.grey[400],
-          fontSize: 14,
+        subtitle: Text(
+          song.displayArtist,
+          style: TextStyle(
+            color: Colors.grey[400],
+            fontSize: 14,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Text(
-        song.formattedDuration,
-        style: TextStyle(
-          color: Colors.grey[600],
-          fontSize: 12,
+        trailing: Text(
+          song.formattedDuration,
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 12,
+          ),
         ),
+        onTap: onTap,
+        onLongPress: onLongPress,
       ),
-      onTap: onTap,
     );
   }
 }
