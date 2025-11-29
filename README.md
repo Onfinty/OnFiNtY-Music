@@ -166,7 +166,7 @@ flutter build apk --release
 
 <div align="center">
 
-[![Download APK](https://img.shields.io/badge/Download-APK-purple?style=for-the-badge&logo=android)]((https://github.com/Onfinty/OnFiNtY-Music/releases/download/v1.0.6/Onfinty.apk))
+[![Download APK](https://img.shields.io/badge/Download-APK-purple?style=for-the-badge&logo=android)](https://github.com/Onfinty/OnFiNtY-Music/releases/download/v1.0.6/Onfinty.apk)
 
 **[View All Releases](https://github.com/Onfinty/OnFiNtY-Music/releases)**
 
