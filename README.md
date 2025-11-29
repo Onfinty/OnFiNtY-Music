@@ -69,7 +69,7 @@
 ---
 
 ## 📸 Screenshots
-
+soon
 ### Home Screen
 - Clean, organized list of all your songs
 - Tabs for Songs, Albums, and Hidden tracks
@@ -158,6 +158,30 @@ flutter run
 ```bash
 flutter build apk --release
 ```
+
+---
+## 📥 Download
+
+### Latest Release: v1.0.6
+
+<div align="center">
+
+[![Download APK](https://img.shields.io/badge/Download-APK-purple?style=for-the-badge&logo=android)]((https://github.com/Onfinty/OnFiNtY-Music/releases/download/v1.0.6/Onfinty.apk))
+
+**[View All Releases](https://github.com/Onfinty/OnFiNtY-Music/releases)**
+
+</div>
+
+### Installation
+1. Download the APK from the link above
+2. Enable "Install from Unknown Sources" in your Android settings
+3. Open the downloaded APK file
+4. Follow the installation prompts
+5. Grant necessary permissions when launching the app
+
+**Minimum Requirements:**
+- Android 6.0 (API level 23) or higher
+- ~50MB storage space
 
 ---
 
