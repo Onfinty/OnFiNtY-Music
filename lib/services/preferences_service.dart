@@ -11,6 +11,7 @@ class PreferencesService {
   static const String _themeModeKey = 'theme_mode';
   static const String _dynamicArtThemeKey = 'dynamic_art_theme';
   static const String _artworkPaletteCacheKey = 'artwork_palette_cache_v1';
+  static const String _audioEffectsStateKey = 'audio_effects_state_v1';
 
   static SharedPreferences? _prefsInstance;
 
@@ -353,6 +354,56 @@ class PreferencesService {
       return await prefs.remove(_artworkPaletteCacheKey);
     } catch (e) {
       debugPrint('Error clearing artwork palette cache: $e');
+      return false;
+    }
+  }
+
+  // Audio Effects State
+  static Future<Map<String, dynamic>> getAudioEffectsState() async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) {
+        return <String, dynamic>{};
+      }
+
+      final raw = prefs.getString(_audioEffectsStateKey);
+      if (raw == null || raw.isEmpty) {
+        return <String, dynamic>{};
+      }
+
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      return <String, dynamic>{};
+    } catch (e) {
+      debugPrint('Error reading audio effects state: $e');
+      return <String, dynamic>{};
+    }
+  }
+
+  static Future<bool> saveAudioEffectsState(Map<String, dynamic> state) async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) {
+        return false;
+      }
+      return await prefs.setString(_audioEffectsStateKey, jsonEncode(state));
+    } catch (e) {
+      debugPrint('Error saving audio effects state: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> clearAudioEffectsState() async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) {
+        return false;
+      }
+      return await prefs.remove(_audioEffectsStateKey);
+    } catch (e) {
+      debugPrint('Error clearing audio effects state: $e');
       return false;
     }
   }

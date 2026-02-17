@@ -200,6 +200,12 @@ final loopModeProvider = StateProvider<AudioServiceRepeatMode>(
 // Playback speed provider
 final playbackSpeedProvider = StateProvider<double>((ref) => 1.0);
 
+// Audio effects state from handler (quick presets + EQ + reverb)
+final audioEffectsProvider = StreamProvider<AudioEffectsState>((ref) {
+  final handler = ref.watch(audioHandlerProvider);
+  return handler.audioEffectsStateStream.distinct();
+});
+
 // Favorites provider with SharedPreferences
 final favoritesProvider = StateNotifierProvider<FavoritesNotifier, List<int>>((
   ref,

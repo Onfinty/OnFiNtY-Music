@@ -248,6 +248,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final loopMode = ref.watch(loopModeProvider);
     final favorites = ref.watch(favoritesProvider);
     final audioHandler = ref.watch(audioHandlerProvider);
+    final audioEffectsAsync = ref.watch(audioEffectsProvider);
     final hiddenSongs = ref.watch(hiddenSongsProvider);
     final isDark = ref.watch(isDarkModeProvider);
 
@@ -255,6 +256,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final isPlaying = isPlayingAsync.value ?? false;
     final currentPosition = currentPositionAsync.value ?? Duration.zero;
     final currentDuration = currentDurationAsync.value ?? Duration.zero;
+    final audioEffects =
+        audioEffectsAsync.value ?? audioHandler.audioEffectsState;
 
     // Rotation animation
     if (isPlaying) {
@@ -434,6 +437,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                             isCompact,
                             middlePrimaryTextColor,
                             middleSecondaryTextColor,
+                          ),
+                        ),
+
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            20,
+                            0,
+                            20,
+                            isCompact ? 8 : 10,
+                          ),
+                          child: _buildQuickPresetRow(
+                            audioHandler: audioHandler,
+                            effectsState: audioEffects,
+                            isDark: isDark,
+                            isCompact: isCompact,
+                            accentColor: accentColor,
+                            primaryTextColor: middlePrimaryTextColor,
+                            secondaryTextColor: middleSecondaryTextColor,
+                            surfaceColor: controlSurfaceColor,
+                            borderColor: controlBorderColor,
                           ),
                         ),
 
@@ -739,6 +762,140 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ],
       ),
     );
+  }
+
+  Widget _buildQuickPresetRow({
+    required OnFinityAudioHandler audioHandler,
+    required AudioEffectsState effectsState,
+    required bool isDark,
+    required bool isCompact,
+    required Color accentColor,
+    required Color primaryTextColor,
+    required Color secondaryTextColor,
+    required Color surfaceColor,
+    required Color borderColor,
+  }) {
+    final quickPresets = <AudioQuickPreset>[
+      AudioQuickPreset.normal,
+      AudioQuickPreset.slowedReverb,
+      AudioQuickPreset.spedUp,
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.auto_awesome_rounded, color: accentColor, size: 15),
+            const SizedBox(width: 6),
+            Text(
+              'Quick Vibes',
+              style: TextStyle(
+                color: primaryTextColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+              ),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => _showAudioEffectsDialog(context, isDark),
+              style: TextButton.styleFrom(
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                visualDensity: VisualDensity.compact,
+                foregroundColor: accentColor,
+              ),
+              icon: const Icon(Icons.tune_rounded, size: 16),
+              label: const Text(
+                'Audio Lab',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: quickPresets.map((preset) {
+            final isSelected = effectsState.quickPreset == preset;
+            return _buildQuickPresetChip(
+              label: _quickPresetLabel(preset),
+              selected: isSelected,
+              isCompact: isCompact,
+              primaryTextColor: primaryTextColor,
+              secondaryTextColor: secondaryTextColor,
+              accentColor: accentColor,
+              surfaceColor: surfaceColor,
+              borderColor: borderColor,
+              onTap: () async {
+                await audioHandler.applyQuickPreset(preset);
+                ref.read(playbackSpeedProvider.notifier).state =
+                    audioHandler.audioEffectsState.speed;
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuickPresetChip({
+    required String label,
+    required bool selected,
+    required bool isCompact,
+    required Color primaryTextColor,
+    required Color secondaryTextColor,
+    required Color accentColor,
+    required Color surfaceColor,
+    required Color borderColor,
+    required VoidCallback onTap,
+  }) {
+    final selectedColor = accentColor.withValues(alpha: 0.16);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.symmetric(
+          horizontal: isCompact ? 12 : 14,
+          vertical: isCompact ? 7 : 8,
+        ),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          color: selected ? selectedColor : surfaceColor,
+          border: Border.all(
+            color: selected
+                ? accentColor.withValues(alpha: 0.68)
+                : borderColor.withValues(alpha: 0.9),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? primaryTextColor : secondaryTextColor,
+            fontSize: isCompact ? 12 : 12.5,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _quickPresetLabel(AudioQuickPreset preset) {
+    return switch (preset) {
+      AudioQuickPreset.normal => 'Normal',
+      AudioQuickPreset.slowedReverb => 'Slowed + Reverb',
+      AudioQuickPreset.spedUp => 'Sped Up',
+      AudioQuickPreset.custom => 'Custom',
+    };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1063,6 +1220,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       isDark: isDark,
                     ),
                     _buildMenuItem(
+                      icon: Icons.tune_rounded,
+                      title: 'Audio Effects',
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showAudioEffectsDialog(context, isDark);
+                      },
+                      isDark: isDark,
+                    ),
+                    _buildMenuItem(
                       icon: Icons.speed_rounded,
                       title: 'Playback Speed',
                       onTap: () {
@@ -1120,7 +1286,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _showSpeedDialog(BuildContext context, bool isDark) {
     final audioHandler = ref.read(audioHandlerProvider);
-    final currentSpeed = ref.read(playbackSpeedProvider);
+    final currentSpeed =
+        ref.read(audioEffectsProvider).value?.speed ??
+        audioHandler.audioEffectsState.speed;
     final bgColor = isDark
         ? const Color(0xFF1A1A1A).withValues(alpha: 0.95)
         : Colors.white;
@@ -1163,15 +1331,390 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  onTap: () {
-                    audioHandler.setSpeed(speed);
+                  onTap: () async {
+                    await audioHandler.setSpeed(speed);
                     ref.read(playbackSpeedProvider.notifier).state = speed;
-                    Navigator.pop(context);
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                    }
                   },
                 );
               }).toList(),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  void _showAudioEffectsDialog(BuildContext context, bool isDark) {
+    final audioHandler = ref.read(audioHandlerProvider);
+    final initialState =
+        ref.read(audioEffectsProvider).value ?? audioHandler.audioEffectsState;
+    final bgColor = isDark
+        ? const Color(0xFF161616).withValues(alpha: 0.96)
+        : Colors.white.withValues(alpha: 0.97);
+    final textColor = isDark ? Colors.white : const Color(0xFF1C1B1F);
+    final secondaryText = isDark
+        ? Colors.white.withValues(alpha: 0.72)
+        : const Color(0xFF5A5864);
+    final dividerColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.06);
+
+    const presets = <AudioQuickPreset>[
+      AudioQuickPreset.normal,
+      AudioQuickPreset.slowedReverb,
+      AudioQuickPreset.spedUp,
+    ];
+    const eqBandLabels = <String>[
+      '60 Hz',
+      '230 Hz',
+      '910 Hz',
+      '3.6 kHz',
+      '14 kHz',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        var localQuickPreset = initialState.quickPreset;
+        var localEqEnabled = initialState.equalizerEnabled;
+        var localReverbEnabled = initialState.reverbEnabled;
+        var localBandLevels = List<double>.from(initialState.bandLevelsDb);
+        final nativeFxAvailable = initialState.nativeFxAvailable;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.78,
+              minChildSize: 0.52,
+              maxChildSize: 0.94,
+              builder: (context, scrollController) {
+                return ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: bgColor,
+                        border: Border(
+                          top: BorderSide(color: dividerColor, width: 1),
+                        ),
+                      ),
+                      child: ListView(
+                        controller: scrollController,
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 40,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.grey[700]
+                                    : Colors.grey[300],
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF8B5CF6,
+                                  ).withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.graphic_eq_rounded,
+                                  color: Color(0xFF8B5CF6),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Audio Lab',
+                                      style: TextStyle(
+                                        color: textColor,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    Text(
+                                      nativeFxAvailable
+                                          ? 'Tune speed, reverb and equalizer in real time'
+                                          : 'Speed and pitch are available. EQ/Reverb need Android effects support.',
+                                      style: TextStyle(
+                                        color: secondaryText,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'Quick Presets',
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: presets.map((preset) {
+                              return ChoiceChip(
+                                selected: localQuickPreset == preset,
+                                label: Text(_quickPresetLabel(preset)),
+                                labelStyle: TextStyle(
+                                  color: localQuickPreset == preset
+                                      ? const Color(0xFF8B5CF6)
+                                      : textColor,
+                                  fontWeight: localQuickPreset == preset
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                ),
+                                backgroundColor: isDark
+                                    ? const Color(0xFF262626)
+                                    : const Color(0xFFF3F3F7),
+                                selectedColor: const Color(
+                                  0xFF8B5CF6,
+                                ).withValues(alpha: 0.12),
+                                side: BorderSide(
+                                  color: localQuickPreset == preset
+                                      ? const Color(0xFF8B5CF6)
+                                      : dividerColor,
+                                  width: 1,
+                                ),
+                                onSelected: (_) async {
+                                  await audioHandler.applyQuickPreset(preset);
+                                  final latest = audioHandler.audioEffectsState;
+                                  ref
+                                          .read(playbackSpeedProvider.notifier)
+                                          .state =
+                                      latest.speed;
+                                  if (!mounted) {
+                                    return;
+                                  }
+                                  setModalState(() {
+                                    localQuickPreset = latest.quickPreset;
+                                    localEqEnabled = latest.equalizerEnabled;
+                                    localReverbEnabled = latest.reverbEnabled;
+                                    localBandLevels = List<double>.from(
+                                      latest.bandLevelsDb,
+                                    );
+                                  });
+                                },
+                              );
+                            }).toList(),
+                          ),
+                          const SizedBox(height: 18),
+                          SwitchListTile.adaptive(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              'Equalizer',
+                              style: TextStyle(
+                                color: textColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              nativeFxAvailable
+                                  ? 'Turn on frequency shaping'
+                                  : 'Not available on this platform',
+                              style: TextStyle(color: secondaryText),
+                            ),
+                            activeThumbColor: const Color(0xFF8B5CF6),
+                            value: localEqEnabled,
+                            onChanged: nativeFxAvailable
+                                ? (value) async {
+                                    setModalState(() {
+                                      localEqEnabled = value;
+                                    });
+                                    await audioHandler.setEqualizerEnabled(
+                                      value,
+                                    );
+                                  }
+                                : null,
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: AudioEqualizerPreset.values.map((preset) {
+                              final label = switch (preset) {
+                                AudioEqualizerPreset.flat => 'Flat',
+                                AudioEqualizerPreset.bassBoost => 'Bass Boost',
+                                AudioEqualizerPreset.vocal => 'Vocal',
+                                AudioEqualizerPreset.trebleBoost => 'Treble',
+                              };
+                              return OutlinedButton(
+                                onPressed: nativeFxAvailable
+                                    ? () async {
+                                        await audioHandler.applyEqualizerPreset(
+                                          preset,
+                                        );
+                                        final latest =
+                                            audioHandler.audioEffectsState;
+                                        if (!mounted) {
+                                          return;
+                                        }
+                                        setModalState(() {
+                                          localEqEnabled =
+                                              latest.equalizerEnabled;
+                                          localBandLevels = List<double>.from(
+                                            latest.bandLevelsDb,
+                                          );
+                                          localQuickPreset = latest.quickPreset;
+                                        });
+                                      }
+                                    : null,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: textColor,
+                                  side: BorderSide(color: dividerColor),
+                                ),
+                                child: Text(label),
+                              );
+                            }).toList(),
+                          ),
+                          const SizedBox(height: 10),
+                          for (var i = 0; i < localBandLevels.length; i++)
+                            Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 72,
+                                      child: Text(
+                                        i < eqBandLabels.length
+                                            ? eqBandLabels[i]
+                                            : 'Band ${i + 1}',
+                                        style: TextStyle(
+                                          color: secondaryText,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: SliderTheme(
+                                        data: SliderThemeData(
+                                          trackHeight: 3.5,
+                                          thumbShape:
+                                              const RoundSliderThumbShape(
+                                                enabledThumbRadius: 6,
+                                              ),
+                                          activeTrackColor: const Color(
+                                            0xFF8B5CF6,
+                                          ),
+                                          thumbColor: const Color(0xFF8B5CF6),
+                                          inactiveTrackColor: secondaryText
+                                              .withValues(alpha: 0.22),
+                                        ),
+                                        child: Slider(
+                                          value: localBandLevels[i],
+                                          min: -12,
+                                          max: 12,
+                                          onChanged:
+                                              nativeFxAvailable &&
+                                                  localEqEnabled
+                                              ? (value) {
+                                                  setModalState(() {
+                                                    localBandLevels[i] = value;
+                                                  });
+                                                }
+                                              : null,
+                                          onChangeEnd:
+                                              nativeFxAvailable &&
+                                                  localEqEnabled
+                                              ? (value) async {
+                                                  await audioHandler
+                                                      .setEqualizerBandLevel(
+                                                        i,
+                                                        value,
+                                                      );
+                                                }
+                                              : null,
+                                        ),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 42,
+                                      child: Text(
+                                        '${localBandLevels[i].toStringAsFixed(1)} dB',
+                                        textAlign: TextAlign.right,
+                                        style: TextStyle(
+                                          color: secondaryText,
+                                          fontSize: 11,
+                                          fontFeatures: const [
+                                            FontFeature.tabularFigures(),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                              ],
+                            ),
+                          const SizedBox(height: 4),
+                          SwitchListTile.adaptive(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              'Reverb',
+                              style: TextStyle(
+                                color: textColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              nativeFxAvailable
+                                  ? 'Adds room depth for slowed vibe presets'
+                                  : 'Not available on this platform',
+                              style: TextStyle(color: secondaryText),
+                            ),
+                            activeThumbColor: const Color(0xFF8B5CF6),
+                            value: localReverbEnabled,
+                            onChanged: nativeFxAvailable
+                                ? (value) async {
+                                    setModalState(() {
+                                      localReverbEnabled = value;
+                                      localQuickPreset =
+                                          AudioQuickPreset.custom;
+                                    });
+                                    await audioHandler.setReverbEnabled(value);
+                                  }
+                                : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
         );
       },
     );
