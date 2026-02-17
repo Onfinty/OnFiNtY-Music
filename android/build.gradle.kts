@@ -5,23 +5,26 @@ allprojects {
     }
 }
 
-val newBuildDir: Directory =
-    rootProject.layout.buildDirectory
-        .dir("../../build")
-        .get()
+val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
 rootProject.layout.buildDirectory.value(newBuildDir)
 
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-
 subprojects {
-    apply(plugin = "kotlin-android")
-    
-    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-        kotlinOptions {
-            jvmTarget = "11"
+    project.evaluationDependsOn(":app")
+}
+
+// Fix for plugins missing namespace (required by AGP 8+)
+// Uses plugins.withId to hook BEFORE evaluation completes
+subprojects {
+    project.plugins.withId("com.android.library") {
+        val android = project.extensions.getByType(com.android.build.gradle.LibraryExtension::class.java)
+        if (android.namespace.isNullOrEmpty()) {
+            android.namespace = project.group.toString().ifEmpty {
+                "com.${project.name.replace("-", ".")}"
+            }
         }
     }
 }

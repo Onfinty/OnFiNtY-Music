@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/song_model.dart';
+import '../screens/album_detail_screen.dart';
+import 'package:on_audio_query/on_audio_query.dart' show AlbumModel;
 import '../screens/home_screen.dart';
 import '../screens/player_screen.dart';
 import '../screens/settings_screen.dart';
@@ -38,6 +40,13 @@ final routerProvider = Provider<GoRouter>((ref) {
                   );
                 },
           );
+        },
+      ),
+      GoRoute(
+        path: '/album',
+        builder: (context, state) {
+          final album = state.extra as AlbumModel;
+          return AlbumDetailScreen(album: album);
         },
       ),
       GoRoute(

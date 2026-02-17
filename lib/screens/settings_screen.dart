@@ -59,7 +59,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       // Trigger refresh by incrementing the provider
       ref.read(libraryRefreshProvider.notifier).state++;
-      
+
       // Invalidate songs and albums providers to force reload
       ref.invalidate(songsProvider);
       ref.invalidate(albumsProvider);
@@ -69,11 +69,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await _loadLastScanTime();
 
       if (mounted) {
+        final accentColor = Theme.of(context).colorScheme.primary;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Music library refreshed successfully!'),
-            backgroundColor: Color(0xFF8B5CF6),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: const Text('Music library refreshed successfully!'),
+            backgroundColor: accentColor,
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -97,16 +98,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _clearCache() async {
     try {
-      // Clear artwork cache
+      final freedBytes = CachedArtworkWidget.getCacheSize();
       CachedArtworkWidget.clearCache();
-      
+      await ref.read(artworkPaletteServiceProvider).clearCache();
+
       if (mounted) {
+        final accentColor = Theme.of(context).colorScheme.primary;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Cache cleared! Freed ${(CachedArtworkWidget.getCacheSize() / 1024 / 1024).toStringAsFixed(2)} MB',
+              'Cache cleared! Freed ${(freedBytes / 1024 / 1024).toStringAsFixed(2)} MB',
             ),
-            backgroundColor: const Color(0xFF8B5CF6),
+            backgroundColor: accentColor,
           ),
         );
       }
@@ -126,22 +129,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final cacheSize = CachedArtworkWidget.getCacheSize();
     final cacheCount = CachedArtworkWidget.getCacheCount();
-    
+    final isDark = ref.watch(isDarkModeProvider);
+    final useDynamicArtworkTheme = ref.watch(dynamicArtworkThemeProvider);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final backgroundColor = theme.scaffoldBackgroundColor;
+    final textColor = colorScheme.onSurface;
+    final subtitleColor = isDark ? Colors.grey[400] : Colors.grey[600];
+    final iconColor = colorScheme.primary;
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: backgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back, color: textColor),
           onPressed: () => context.pop(),
         ),
-        title: const Text(
+        title: Text(
           'Settings',
           style: TextStyle(
             fontFamily: 'Lobster',
             fontSize: 28,
-            color: Color(0xFF8B5CF6),
+            color: iconColor,
           ),
         ),
       ),
@@ -150,6 +162,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: [
           _buildSection(
             title: 'Library',
+            isDark: isDark,
             children: [
               _buildListTile(
                 icon: Icons.refresh,
@@ -157,17 +170,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle: _isScanning
                     ? 'Scanning...'
                     : _lastScanTime != null
-                        ? 'Last scanned: ${_formatLastScanTime()}'
-                        : 'Refresh music library',
+                    ? 'Last scanned: ${_formatLastScanTime()}'
+                    : 'Refresh music library',
+                isDark: isDark,
                 trailing: _isScanning
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Color(0xFF8B5CF6),
-                          ),
+                          valueColor: AlwaysStoppedAnimation<Color>(iconColor),
                         ),
                       )
                     : null,
@@ -176,7 +188,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               _buildListTile(
                 icon: Icons.storage,
                 title: 'Cache Size',
-                subtitle: '${(cacheSize / 1024 / 1024).toStringAsFixed(2)} MB ($cacheCount images)',
+                subtitle:
+                    '${(cacheSize / 1024 / 1024).toStringAsFixed(2)} MB ($cacheCount images)',
+                isDark: isDark,
                 onTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -185,7 +199,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         'Cached images: $cacheCount\n'
                         'Max cache size: 50 MB',
                       ),
-                      backgroundColor: const Color(0xFF8B5CF6),
+                      backgroundColor: iconColor,
                       duration: const Duration(seconds: 3),
                     ),
                   );
@@ -195,77 +209,85 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 icon: Icons.clear_all,
                 title: 'Clear Cache',
                 subtitle: 'Free up space',
-                onTap: () => _showClearCacheDialog(context),
+                isDark: isDark,
+                onTap: () => _showClearCacheDialog(context, isDark),
               ),
             ],
           ),
           const SizedBox(height: 20),
           _buildSection(
-            title: 'Audio',
+            title: 'Appearance',
+            isDark: isDark,
             children: [
-              _buildListTile(
-                icon: Icons.equalizer,
-                title: 'Equalizer',
-                subtitle: 'Coming soon',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Equalizer feature coming soon!'),
-                      backgroundColor: Color(0xFF8B5CF6),
+              Consumer(
+                builder: (context, ref, child) {
+                  return ListTile(
+                    leading: Icon(
+                      isDark
+                          ? Icons.dark_mode_rounded
+                          : Icons.light_mode_rounded,
+                      color: iconColor,
+                    ),
+                    title: Text('Theme', style: TextStyle(color: textColor)),
+                    subtitle: Text(
+                      isDark ? 'Dark Mode' : 'Light Mode',
+                      style: TextStyle(color: subtitleColor),
+                    ),
+                    trailing: Switch(
+                      value: !isDark,
+                      onChanged: (value) {
+                        ref.read(themeModeProvider.notifier).toggle();
+                      },
+                      activeColor: iconColor,
                     ),
                   );
                 },
               ),
-              _buildListTile(
-                icon: Icons.high_quality,
-                title: 'Audio Quality',
-                subtitle: 'High (AAC 320kbps)',
-                onTap: () {
-                  _showAudioQualityDialog(context);
-                },
-              ),
-              _buildListTile(
-                icon: Icons.headphones,
-                title: 'Headphone Detection',
-                subtitle: 'Auto-pause when disconnected',
-                trailing: Switch(
-                  value: true,
-                  onChanged: (value) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          value
-                              ? 'Headphone detection enabled'
-                              : 'Headphone detection disabled',
-                        ),
-                        backgroundColor: const Color(0xFF8B5CF6),
-                      ),
-                    );
-                  },
-                  activeColor: const Color(0xFF8B5CF6),
+              ListTile(
+                leading: Icon(Icons.auto_awesome_rounded, color: iconColor),
+                title: Text(
+                  'Dynamic Artwork Theme',
+                  style: TextStyle(color: textColor),
                 ),
-                onTap: null,
+                subtitle: Text(
+                  useDynamicArtworkTheme
+                      ? 'Using current song cover colors'
+                      : 'Use default app theme colors',
+                  style: TextStyle(color: subtitleColor),
+                ),
+                trailing: Switch(
+                  value: useDynamicArtworkTheme,
+                  onChanged: (value) {
+                    ref
+                        .read(dynamicArtworkThemeProvider.notifier)
+                        .setEnabled(value);
+                  },
+                  activeColor: iconColor,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 20),
           _buildSection(
             title: 'Privacy',
+            isDark: isDark,
             children: [
               _buildListTile(
                 icon: Icons.visibility_off,
                 title: 'Hidden Songs',
                 subtitle: 'Manage hidden songs',
+                isDark: isDark,
                 onTap: () {
-                  _showHiddenSongsDialog(context);
+                  _showHiddenSongsDialog(context, isDark);
                 },
               ),
               _buildListTile(
                 icon: Icons.delete_outline,
                 title: 'Clear All Data',
                 subtitle: 'Reset all settings and favorites',
+                isDark: isDark,
                 onTap: () {
-                  _showClearAllDataDialog(context);
+                  _showClearAllDataDialog(context, isDark);
                 },
               ),
             ],
@@ -273,30 +295,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 20),
           _buildSection(
             title: 'About',
+            isDark: isDark,
             children: [
               _buildListTile(
                 icon: Icons.music_note,
                 title: 'OnFiNtY',
-                subtitle: 'Version 1.0.6',
+                subtitle: 'Version 2.0.0',
+                isDark: isDark,
                 onTap: () {},
               ),
               _buildListTile(
                 icon: Icons.info_outline,
                 title: 'About App',
                 subtitle: 'Lightweight music player',
+                isDark: isDark,
                 onTap: () {
-                  _showAboutDialog(context);
+                  _showAboutDialog(context, isDark);
                 },
               ),
               _buildListTile(
                 icon: Icons.code,
                 title: 'Developer',
                 subtitle: 'Made by Kyrillos Sameh',
+                isDark: isDark,
                 onTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Thanks for using OnFiNtY! 🎵'),
-                      backgroundColor: Color(0xFF8B5CF6),
+                    SnackBar(
+                      content: const Text('Thanks for using OnFiNtY! 🎵'),
+                      backgroundColor: iconColor,
                     ),
                   );
                 },
@@ -311,10 +337,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   String _formatLastScanTime() {
     if (_lastScanTime == null) return 'Never';
-    
+
     final now = DateTime.now();
     final difference = now.difference(_lastScanTime!);
-    
+
     if (difference.inMinutes < 1) {
       return 'Just now';
     } else if (difference.inHours < 1) {
@@ -331,7 +357,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget _buildSection({
     required String title,
     required List<Widget> children,
+    required bool isDark,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -339,8 +367,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           padding: const EdgeInsets.only(left: 16, bottom: 8),
           child: Text(
             title,
-            style: const TextStyle(
-              color: Color(0xFF8B5CF6),
+            style: TextStyle(
+              color: colorScheme.primary,
               fontSize: 18,
               fontWeight: FontWeight.bold,
             ),
@@ -348,8 +376,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
+            color: colorScheme.surface,
             borderRadius: BorderRadius.circular(12),
+            boxShadow: isDark
+                ? []
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
           ),
           child: Column(children: children),
         ),
@@ -361,39 +398,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     required IconData icon,
     required String title,
     required String subtitle,
+    required bool isDark,
     VoidCallback? onTap,
     Widget? trailing,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textColor = isDark ? Colors.white : const Color(0xFF1C1B1F);
+    final subtitleColor = isDark ? Colors.grey[400] : Colors.grey[600];
+    final iconColor = colorScheme.primary;
+
     return ListTile(
-      leading: Icon(icon, color: const Color(0xFF8B5CF6)),
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      subtitle: Text(subtitle, style: TextStyle(color: Colors.grey[600])),
-      trailing: trailing ?? 
-          (onTap != null 
+      leading: Icon(icon, color: iconColor),
+      title: Text(title, style: TextStyle(color: textColor)),
+      subtitle: Text(subtitle, style: TextStyle(color: subtitleColor)),
+      trailing:
+          trailing ??
+          (onTap != null
               ? const Icon(Icons.chevron_right, color: Colors.grey)
               : null),
       onTap: onTap,
     );
   }
 
-  void _showAboutDialog(BuildContext context) {
+  void _showAboutDialog(BuildContext context, bool isDark) {
+    final bgColor = isDark ? const Color(0xFF1A1A1A) : Colors.white;
+    final textColor = isDark ? Colors.white70 : Colors.black87;
+    final iconColor = Theme.of(context).colorScheme.primary;
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: bgColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: const Text(
+          title: Text(
             'OnFiNtY',
             style: TextStyle(
               fontFamily: 'Lobster',
               fontSize: 32,
-              color: Color(0xFF8B5CF6),
+              color: iconColor,
             ),
           ),
-          content: const SingleChildScrollView(
+          content: SingleChildScrollView(
             child: Text(
               'A lightweight and smooth music player built with Flutter.\n\n'
               'Features:\n'
@@ -408,17 +456,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               '• High-quality album artwork\n'
               '• Smooth animations\n\n'
               'Made by Kyrillos Sameh\n'
-              'Version 1.0.6',
-              style: TextStyle(color: Colors.white70, height: 1.5),
+              'Version 2.0.0',
+              style: TextStyle(color: textColor, height: 1.5),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Close',
-                style: TextStyle(color: Color(0xFF8B5CF6)),
-              ),
+              child: Text('Close', style: TextStyle(color: iconColor)),
             ),
           ],
         );
@@ -426,33 +471,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  void _showClearCacheDialog(BuildContext context) {
+  void _showClearCacheDialog(BuildContext context, bool isDark) {
     final cacheSize = CachedArtworkWidget.getCacheSize();
-    
+    final bgColor = isDark ? const Color(0xFF1A1A1A) : Colors.white;
+    final textColor = isDark ? Colors.white70 : Colors.black87;
+    final titleColor = isDark ? Colors.white : Colors.black;
+    final iconColor = Theme.of(context).colorScheme.primary;
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: bgColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: const Text(
-            'Clear Cache',
-            style: TextStyle(color: Colors.white),
-          ),
+          title: Text('Clear Cache', style: TextStyle(color: titleColor)),
           content: Text(
-            'This will clear ${(cacheSize / 1024 / 1024).toStringAsFixed(2)} MB of cached album artwork.\n\n'
-            'Artwork will be reloaded as needed.',
-            style: const TextStyle(color: Colors.white70),
+            'This will clear ${(cacheSize / 1024 / 1024).toStringAsFixed(2)} MB of cached album artwork and saved cover-color palettes.\n\n'
+            'Artwork and colors will be rebuilt as needed.',
+            style: TextStyle(color: textColor),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Colors.grey),
-              ),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
             ),
             TextButton(
               onPressed: () async {
@@ -460,10 +503,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 await _clearCache();
                 setState(() {}); // Refresh cache size display
               },
-              child: const Text(
-                'Clear',
-                style: TextStyle(color: Color(0xFF8B5CF6)),
-              ),
+              child: Text('Clear', style: TextStyle(color: iconColor)),
             ),
           ],
         );
@@ -471,109 +511,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  void _showAudioQualityDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: const Text(
-            'Audio Quality',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildQualityOption(
-                context,
-                'Low',
-                '128 kbps • Saves data',
-                false,
-              ),
-              _buildQualityOption(
-                context,
-                'Normal',
-                '192 kbps • Balanced',
-                false,
-              ),
-              _buildQualityOption(
-                context,
-                'High',
-                '320 kbps • Best quality',
-                true,
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildQualityOption(
-    BuildContext context,
-    String title,
-    String subtitle,
-    bool isSelected,
-  ) {
-    return ListTile(
-      leading: Icon(
-        isSelected ? Icons.check_circle : Icons.circle_outlined,
-        color: isSelected ? const Color(0xFF8B5CF6) : Colors.grey,
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: isSelected ? const Color(0xFF8B5CF6) : Colors.white,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(color: Colors.grey[600], fontSize: 12),
-      ),
-      onTap: () {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Audio quality set to $title'),
-            backgroundColor: const Color(0xFF8B5CF6),
-          ),
-        );
-      },
-    );
-  }
-
-  void _showHiddenSongsDialog(BuildContext context) {
+  void _showHiddenSongsDialog(BuildContext context, bool isDark) {
     final hiddenSongs = ref.read(hiddenSongsProvider);
-    
+    final bgColor = isDark ? const Color(0xFF1A1A1A) : Colors.white;
+    final textColor = isDark ? Colors.white70 : Colors.black87;
+    final titleColor = isDark ? Colors.white : Colors.black;
+    final iconColor = Theme.of(context).colorScheme.primary;
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: bgColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: const Text(
-            'Hidden Songs',
-            style: TextStyle(color: Colors.white),
-          ),
+          title: Text('Hidden Songs', style: TextStyle(color: titleColor)),
           content: Text(
             hiddenSongs.isEmpty
                 ? 'You have no hidden songs.'
                 : 'You have ${hiddenSongs.length} hidden song${hiddenSongs.length > 1 ? 's' : ''}.\n\n'
-                    'You can view and unhide them from the "Hidden" tab on the home screen.',
-            style: const TextStyle(color: Colors.white70),
+                      'You can view and unhide them from the "Hidden" tab on the home screen.',
+            style: TextStyle(color: textColor),
           ),
           actions: [
             if (hiddenSongs.isNotEmpty)
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  _showClearHiddenSongsDialog(context);
+                  _showClearHiddenSongsDialog(context, isDark);
                 },
                 child: const Text(
                   'Unhide All',
@@ -582,10 +548,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Close',
-                style: TextStyle(color: Color(0xFF8B5CF6)),
-              ),
+              child: Text('Close', style: TextStyle(color: iconColor)),
             ),
           ],
         );
@@ -593,33 +556,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  void _showClearHiddenSongsDialog(BuildContext context) {
+  void _showClearHiddenSongsDialog(BuildContext context, bool isDark) {
     final hiddenSongs = ref.read(hiddenSongsProvider);
-    
+    final bgColor = isDark ? const Color(0xFF1A1A1A) : Colors.white;
+    final textColor = isDark ? Colors.white70 : Colors.black87;
+    final titleColor = isDark ? Colors.white : Colors.black;
+    final iconColor = Theme.of(context).colorScheme.primary;
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: bgColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: const Text(
-            'Unhide All Songs',
-            style: TextStyle(color: Colors.white),
-          ),
+          title: Text('Unhide All Songs', style: TextStyle(color: titleColor)),
           content: Text(
             'This will unhide all ${hiddenSongs.length} hidden songs.\n\n'
             'Are you sure?',
-            style: const TextStyle(color: Colors.white70),
+            style: TextStyle(color: textColor),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Colors.grey),
-              ),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
             ),
             TextButton(
               onPressed: () async {
@@ -627,17 +588,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 if (context.mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('All songs unhidden!'),
-                      backgroundColor: Color(0xFF8B5CF6),
+                    SnackBar(
+                      content: const Text('All songs unhidden!'),
+                      backgroundColor: iconColor,
                     ),
                   );
                 }
               },
-              child: const Text(
-                'Unhide All',
-                style: TextStyle(color: Color(0xFF8B5CF6)),
-              ),
+              child: Text('Unhide All', style: TextStyle(color: iconColor)),
             ),
           ],
         );
@@ -645,20 +603,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  void _showClearAllDataDialog(BuildContext context) {
+  void _showClearAllDataDialog(BuildContext context, bool isDark) {
+    final bgColor = isDark ? const Color(0xFF1A1A1A) : Colors.white;
+    final textColor = isDark ? Colors.white70 : Colors.black87;
+    final titleColor = isDark ? Colors.white : Colors.black;
+    final iconColor = Theme.of(context).colorScheme.primary;
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: bgColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: const Text(
-            'Clear All Data',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: const Text(
+          title: Text('Clear All Data', style: TextStyle(color: titleColor)),
+          content: Text(
             'This will permanently delete:\n\n'
             '• All favorite songs\n'
             '• All favorite albums\n'
@@ -666,36 +626,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             '• All settings\n'
             '• Cached artwork\n\n'
             'This action cannot be undone!',
-            style: TextStyle(color: Colors.white70),
+            style: TextStyle(color: textColor),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Colors.grey),
-              ),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
             ),
             TextButton(
               onPressed: () async {
                 // Clear all data
                 await PreferencesService.clearAll();
                 CachedArtworkWidget.clearCache();
-                
+                await ref.read(artworkPaletteServiceProvider).clearCache();
+
                 // Refresh providers
                 ref.invalidate(favoritesProvider);
                 ref.invalidate(favoriteAlbumsProvider);
                 ref.invalidate(hiddenSongsProvider);
-                
+                ref.invalidate(themeModeProvider);
+                ref.invalidate(dynamicArtworkThemeProvider);
+
                 if (context.mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('All data cleared successfully!'),
-                      backgroundColor: Color(0xFF8B5CF6),
+                    SnackBar(
+                      content: const Text('All data cleared successfully!'),
+                      backgroundColor: iconColor,
                     ),
                   );
-                  
+
                   setState(() {
                     _lastScanTime = null;
                   });

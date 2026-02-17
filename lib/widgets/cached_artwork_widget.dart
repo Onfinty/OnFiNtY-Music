@@ -42,18 +42,14 @@ class CachedArtworkWidget extends StatefulWidget {
   }
 }
 
-class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
-    with AutomaticKeepAliveClientMixin {
+class _CachedArtworkWidgetState extends State<CachedArtworkWidget> {
   static final Map<String, Uint8List> _artworkCache = {};
   static const int _maxCacheSize = 50 * 1024 * 1024; // 50MB max cache
   static int _currentCacheSize = 0;
-  
+
   Uint8List? _cachedImage;
   bool _isLoading = true;
   bool _hasError = false;
-
-  @override
-  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -69,7 +65,8 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
     }
   }
 
-  String get _cacheKey => '${widget.type.name}_${widget.id}_${widget.width.toInt()}x${widget.height.toInt()}';
+  String get _cacheKey =>
+      '${widget.type.name}_${widget.id}_${widget.width.toInt()}x${widget.height.toInt()}';
 
   Future<void> _loadArtwork() async {
     // Check cache first
@@ -86,9 +83,12 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
 
     try {
       // Request higher quality for larger images
-      final requestedQuality = widget.width > 200 ? 100 : 
-                              widget.width > 100 ? 90 : 80;
-      
+      final requestedQuality = widget.width > 200
+          ? 100
+          : widget.width > 100
+          ? 90
+          : 80;
+
       final artwork = await OnAudioQuery().queryArtwork(
         widget.id,
         widget.type,
@@ -101,10 +101,10 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
         if (_currentCacheSize + artwork.length > _maxCacheSize) {
           _cleanCache();
         }
-        
+
         _artworkCache[_cacheKey] = artwork;
         _currentCacheSize += artwork.length;
-        
+
         if (mounted) {
           setState(() {
             _cachedImage = artwork;
@@ -133,11 +133,11 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
   /// Clean oldest cache entries to free memory
   static void _cleanCache() {
     if (_artworkCache.isEmpty) return;
-    
+
     // Remove 30% of cache
     final entriesToRemove = (_artworkCache.length * 0.3).ceil();
     final keys = _artworkCache.keys.take(entriesToRemove).toList();
-    
+
     for (var key in keys) {
       final data = _artworkCache.remove(key);
       if (data != null) {
@@ -148,12 +148,11 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
-
     Widget child;
 
     if (_isLoading) {
-      child = widget.nullArtworkWidget ??
+      child =
+          widget.nullArtworkWidget ??
           Container(
             width: widget.width,
             height: widget.height,
@@ -180,7 +179,8 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
             ),
           );
     } else if (_hasError || _cachedImage == null) {
-      child = widget.nullArtworkWidget ??
+      child =
+          widget.nullArtworkWidget ??
           Container(
             width: widget.width,
             height: widget.height,
@@ -238,10 +238,7 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
 
     return RepaintBoundary(
       child: widget.borderRadius != null
-          ? ClipRRect(
-              borderRadius: widget.borderRadius!,
-              child: child,
-            )
+          ? ClipRRect(borderRadius: widget.borderRadius!, child: child)
           : child,
     );
   }
@@ -253,6 +250,6 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget>
   }
 
   static int _getCurrentCacheSize() => _currentCacheSize;
-  
+
   static int _getCacheCountStatic() => _artworkCache.length;
 }

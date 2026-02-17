@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PreferencesService {
@@ -5,6 +8,9 @@ class PreferencesService {
   static const String _favoriteSongsKey = 'favorite_songs';
   static const String _favoriteAlbumsKey = 'favorite_albums';
   static const String _lastScanTimeKey = 'last_scan_time';
+  static const String _themeModeKey = 'theme_mode';
+  static const String _dynamicArtThemeKey = 'dynamic_art_theme';
+  static const String _artworkPaletteCacheKey = 'artwork_palette_cache_v1';
 
   static SharedPreferences? _prefsInstance;
 
@@ -12,7 +18,7 @@ class PreferencesService {
     try {
       _prefsInstance = await SharedPreferences.getInstance();
     } catch (e) {
-      print('Error initializing SharedPreferences: $e');
+      debugPrint('Error initializing SharedPreferences: $e');
     }
   }
 
@@ -20,12 +26,12 @@ class PreferencesService {
     if (_prefsInstance != null) {
       return _prefsInstance;
     }
-    
+
     try {
       _prefsInstance = await SharedPreferences.getInstance();
       return _prefsInstance;
     } catch (e) {
-      print('Error getting SharedPreferences: $e');
+      debugPrint('Error getting SharedPreferences: $e');
       return null;
     }
   }
@@ -35,12 +41,12 @@ class PreferencesService {
     try {
       final prefs = await _getPrefs();
       if (prefs == null) return [];
-      
+
       final List<String>? hiddenList = prefs.getStringList(_hiddenSongsKey);
       if (hiddenList == null) return [];
       return hiddenList.map((e) => int.parse(e)).toList();
     } catch (e) {
-      print('Error getting hidden songs: $e');
+      debugPrint('Error getting hidden songs: $e');
       return [];
     }
   }
@@ -49,11 +55,13 @@ class PreferencesService {
     try {
       final prefs = await _getPrefs();
       if (prefs == null) return false;
-      
-      final List<String> stringList = hiddenSongs.map((e) => e.toString()).toList();
+
+      final List<String> stringList = hiddenSongs
+          .map((e) => e.toString())
+          .toList();
       return await prefs.setStringList(_hiddenSongsKey, stringList);
     } catch (e) {
-      print('Error saving hidden songs: $e');
+      debugPrint('Error saving hidden songs: $e');
       return false;
     }
   }
@@ -67,7 +75,7 @@ class PreferencesService {
       }
       return true;
     } catch (e) {
-      print('Error hiding song: $e');
+      debugPrint('Error hiding song: $e');
       return false;
     }
   }
@@ -78,7 +86,7 @@ class PreferencesService {
       hiddenSongs.remove(songId);
       return await saveHiddenSongs(hiddenSongs);
     } catch (e) {
-      print('Error unhiding song: $e');
+      debugPrint('Error unhiding song: $e');
       return false;
     }
   }
@@ -89,7 +97,7 @@ class PreferencesService {
       if (prefs == null) return false;
       return await prefs.remove(_hiddenSongsKey);
     } catch (e) {
-      print('Error clearing hidden songs: $e');
+      debugPrint('Error clearing hidden songs: $e');
       return false;
     }
   }
@@ -99,12 +107,12 @@ class PreferencesService {
     try {
       final prefs = await _getPrefs();
       if (prefs == null) return [];
-      
+
       final List<String>? favoriteList = prefs.getStringList(_favoriteSongsKey);
       if (favoriteList == null) return [];
       return favoriteList.map((e) => int.parse(e)).toList();
     } catch (e) {
-      print('Error getting favorite songs: $e');
+      debugPrint('Error getting favorite songs: $e');
       return [];
     }
   }
@@ -113,11 +121,13 @@ class PreferencesService {
     try {
       final prefs = await _getPrefs();
       if (prefs == null) return false;
-      
-      final List<String> stringList = favoriteSongs.map((e) => e.toString()).toList();
+
+      final List<String> stringList = favoriteSongs
+          .map((e) => e.toString())
+          .toList();
       return await prefs.setStringList(_favoriteSongsKey, stringList);
     } catch (e) {
-      print('Error saving favorite songs: $e');
+      debugPrint('Error saving favorite songs: $e');
       return false;
     }
   }
@@ -132,7 +142,7 @@ class PreferencesService {
       }
       return await saveFavoriteSongs(favorites);
     } catch (e) {
-      print('Error toggling favorite: $e');
+      debugPrint('Error toggling favorite: $e');
       return false;
     }
   }
@@ -142,11 +152,13 @@ class PreferencesService {
     try {
       final prefs = await _getPrefs();
       if (prefs == null) return [];
-      
-      final List<String>? favoriteList = prefs.getStringList(_favoriteAlbumsKey);
+
+      final List<String>? favoriteList = prefs.getStringList(
+        _favoriteAlbumsKey,
+      );
       return favoriteList ?? [];
     } catch (e) {
-      print('Error getting favorite albums: $e');
+      debugPrint('Error getting favorite albums: $e');
       return [];
     }
   }
@@ -155,10 +167,10 @@ class PreferencesService {
     try {
       final prefs = await _getPrefs();
       if (prefs == null) return false;
-      
+
       return await prefs.setStringList(_favoriteAlbumsKey, favoriteAlbums);
     } catch (e) {
-      print('Error saving favorite albums: $e');
+      debugPrint('Error saving favorite albums: $e');
       return false;
     }
   }
@@ -173,7 +185,7 @@ class PreferencesService {
       }
       return await saveFavoriteAlbums(favorites);
     } catch (e) {
-      print('Error toggling favorite album: $e');
+      debugPrint('Error toggling favorite album: $e');
       return false;
     }
   }
@@ -183,12 +195,12 @@ class PreferencesService {
     try {
       final prefs = await _getPrefs();
       if (prefs == null) return null;
-      
+
       final String? timeString = prefs.getString(_lastScanTimeKey);
       if (timeString == null) return null;
       return DateTime.parse(timeString);
     } catch (e) {
-      print('Error getting last scan time: $e');
+      debugPrint('Error getting last scan time: $e');
       return null;
     }
   }
@@ -197,10 +209,150 @@ class PreferencesService {
     try {
       final prefs = await _getPrefs();
       if (prefs == null) return false;
-      
+
       return await prefs.setString(_lastScanTimeKey, time.toIso8601String());
     } catch (e) {
-      print('Error saving last scan time: $e');
+      debugPrint('Error saving last scan time: $e');
+      return false;
+    }
+  }
+
+  // Theme Mode
+  static Future<bool> getIsDarkMode() async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return true; // Default to dark
+      return prefs.getBool(_themeModeKey) ?? true;
+    } catch (e) {
+      debugPrint('Error getting theme mode: $e');
+      return true;
+    }
+  }
+
+  static Future<bool> saveIsDarkMode(bool isDark) async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return false;
+      return await prefs.setBool(_themeModeKey, isDark);
+    } catch (e) {
+      debugPrint('Error saving theme mode: $e');
+      return false;
+    }
+  }
+
+  // Dynamic Artwork Theme
+  static Future<bool> getUseDynamicArtworkTheme() async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return false;
+      return prefs.getBool(_dynamicArtThemeKey) ?? false;
+    } catch (e) {
+      debugPrint('Error getting dynamic artwork theme: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> saveUseDynamicArtworkTheme(bool enabled) async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return false;
+      return await prefs.setBool(_dynamicArtThemeKey, enabled);
+    } catch (e) {
+      debugPrint('Error saving dynamic artwork theme: $e');
+      return false;
+    }
+  }
+
+  // Artwork Palette Cache
+  static Future<Map<int, Map<String, int>>> getArtworkPaletteCache() async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) {
+        return <int, Map<String, int>>{};
+      }
+
+      final raw = prefs.getString(_artworkPaletteCacheKey);
+      if (raw == null || raw.isEmpty) {
+        return <int, Map<String, int>>{};
+      }
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        return <int, Map<String, int>>{};
+      }
+
+      final parsed = <int, Map<String, int>>{};
+      for (final entry in decoded.entries) {
+        final songId = int.tryParse(entry.key);
+        final value = entry.value;
+        if (songId == null || value is! Map<String, dynamic>) {
+          continue;
+        }
+
+        final glow = value['glow'];
+        final primary = value['primary'];
+        final secondary = value['secondary'];
+        if (glow is int && primary is int && secondary is int) {
+          parsed[songId] = <String, int>{
+            'glow': glow,
+            'primary': primary,
+            'secondary': secondary,
+          };
+        }
+      }
+
+      return parsed;
+    } catch (e) {
+      debugPrint('Error reading artwork palette cache: $e');
+      return <int, Map<String, int>>{};
+    }
+  }
+
+  static Future<bool> saveArtworkPaletteCache(
+    Map<int, Map<String, int>> cache,
+  ) async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) {
+        return false;
+      }
+
+      final serializable = <String, Map<String, int>>{};
+      for (final entry in cache.entries) {
+        final value = entry.value;
+        final glow = value['glow'];
+        final primary = value['primary'];
+        final secondary = value['secondary'];
+        if (glow == null || primary == null || secondary == null) {
+          continue;
+        }
+
+        serializable[entry.key.toString()] = <String, int>{
+          'glow': glow,
+          'primary': primary,
+          'secondary': secondary,
+        };
+      }
+
+      return await prefs.setString(
+        _artworkPaletteCacheKey,
+        jsonEncode(serializable),
+      );
+    } catch (e) {
+      debugPrint('Error saving artwork palette cache: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> clearArtworkPaletteCache() async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) {
+        return false;
+      }
+      return await prefs.remove(_artworkPaletteCacheKey);
+    } catch (e) {
+      debugPrint('Error clearing artwork palette cache: $e');
       return false;
     }
   }
@@ -212,7 +364,7 @@ class PreferencesService {
       if (prefs == null) return false;
       return await prefs.clear();
     } catch (e) {
-      print('Error clearing preferences: $e');
+      debugPrint('Error clearing preferences: $e');
       return false;
     }
   }

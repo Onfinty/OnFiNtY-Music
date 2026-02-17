@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:on_audio_query/on_audio_query.dart' hide SongModel;
 import '../models/song_model.dart';
 import '../providers/music_provider.dart';
@@ -19,84 +18,126 @@ class AlbumDetailScreen extends ConsumerWidget {
     final favoriteAlbums = ref.watch(favoriteAlbumsProvider);
     final hiddenSongs = ref.watch(hiddenSongsProvider);
     final isFavorite = favoriteAlbums.contains(album.id.toString());
+    final isDark = ref.watch(isDarkModeProvider);
+
+    final isLikedSongsAlbum = album.id == -1;
+
+    final backgroundColor = isDark ? Colors.black : const Color(0xFFF8F7FC);
+    final textColor = isDark ? Colors.white : const Color(0xFF1C1B1F);
+    final appBarColor = isDark ? Colors.black : Colors.white;
+    final iconColor = isDark
+        ? const Color(0xFF8B5CF6)
+        : const Color(0xFF7C3AED);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: backgroundColor,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
             expandedHeight: 350,
             pinned: true,
-            backgroundColor: Colors.black,
+            backgroundColor: appBarColor,
+            elevation: 0,
             leading: Container(
               margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.black.withValues(alpha: 0.5),
+                color: (isDark ? Colors.black : Colors.white).withValues(
+                  alpha: 0.5,
+                ),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.2),
+                  color: (isDark ? Colors.white : Colors.black).withValues(
+                    alpha: 0.1,
+                  ),
                   width: 1,
                 ),
               ),
               child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                icon: Icon(
+                  Icons.arrow_back,
+                  color: isDark ? Colors.white : const Color(0xFF1C1B1F),
+                ),
                 onPressed: () => Navigator.pop(context),
               ),
             ),
             actions: [
-              Container(
-                margin: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.black.withValues(alpha: 0.5),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    width: 1,
+              if (!isLikedSongsAlbum)
+                Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: (isDark ? Colors.black : Colors.white).withValues(
+                      alpha: 0.5,
+                    ),
+                    border: Border.all(
+                      color: (isDark ? Colors.white : Colors.black).withValues(
+                        alpha: 0.1,
+                      ),
+                      width: 1,
+                    ),
+                  ),
+                  child: IconButton(
+                    icon: Icon(
+                      isFavorite ? Icons.favorite : Icons.favorite_border,
+                      color: isFavorite
+                          ? Colors.red
+                          : (isDark ? Colors.white : const Color(0xFF1C1B1F)),
+                    ),
+                    onPressed: () {
+                      ref
+                          .read(favoriteAlbumsProvider.notifier)
+                          .toggleFavoriteAlbum(album.id.toString());
+                    },
                   ),
                 ),
-                child: IconButton(
-                  icon: Icon(
-                    isFavorite ? Icons.favorite : Icons.favorite_border,
-                    color: isFavorite ? Colors.red : Colors.white,
-                  ),
-                  onPressed: () {
-                    ref
-                        .read(favoriteAlbumsProvider.notifier)
-                        .toggleFavoriteAlbum(album.id.toString());
-                  },
-                ),
-              ),
             ],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
                 children: [
                   // Album artwork background
-                  CachedArtworkWidget(
-                    id: album.id,
-                    type: ArtworkType.ALBUM,
-                    width: MediaQuery.of(context).size.width,
-                    height: 350,
-                    quality: 100,
-                    fit: BoxFit.cover,
-                    nullArtworkWidget: Container(
+                  if (isLikedSongsAlbum)
+                    Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            const Color(0xFF8B5CF6).withValues(alpha: 0.5),
-                            const Color(0xFF6D28D9).withValues(alpha: 0.5),
+                            const Color(0xFF8B5CF6),
+                            const Color(0xFFEC4899), // Pinkish for favorites
                           ],
                         ),
                       ),
-                      child: const Icon(
-                        Icons.album,
-                        size: 120,
-                        color: Color(0xFF8B5CF6),
+                      child: Center(
+                        child: Icon(
+                          Icons.favorite_rounded,
+                          size: 140,
+                          color: Colors.white.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    )
+                  else
+                    CachedArtworkWidget(
+                      id: album.id,
+                      type: ArtworkType.ALBUM,
+                      width: MediaQuery.of(context).size.width,
+                      height: 350,
+                      quality: 100,
+                      fit: BoxFit.cover,
+                      nullArtworkWidget: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              const Color(0xFF8B5CF6).withValues(alpha: 0.5),
+                              const Color(0xFF6D28D9).withValues(alpha: 0.5),
+                            ],
+                          ),
+                        ),
+                        child: Icon(Icons.album, size: 120, color: iconColor),
                       ),
                     ),
-                  ),
                   // Gradient overlay
                   Container(
                     decoration: BoxDecoration(
@@ -105,8 +146,8 @@ class AlbumDetailScreen extends ConsumerWidget {
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
-                          Colors.black.withValues(alpha: 0.7),
-                          Colors.black,
+                          backgroundColor.withValues(alpha: 0.7),
+                          backgroundColor,
                         ],
                         stops: const [0.0, 0.7, 1.0],
                       ),
@@ -121,40 +162,48 @@ class AlbumDetailScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          album.album,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          isLikedSongsAlbum ? 'Liked Songs' : album.album,
+                          style: TextStyle(
+                            color: textColor,
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black,
-                                blurRadius: 10,
-                              ),
-                            ],
+                            shadows: isDark
+                                ? [
+                                    const Shadow(
+                                      color: Colors.black,
+                                      blurRadius: 10,
+                                    ),
+                                  ]
+                                : [],
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          album.artist ?? 'Unknown Artist',
+                          isLikedSongsAlbum
+                              ? 'Your Favorites'
+                              : (album.artist ?? 'Unknown Artist'),
                           style: TextStyle(
-                            color: Colors.grey[300],
+                            color: isDark ? Colors.grey[300] : Colors.grey[700],
                             fontSize: 18,
-                            shadows: const [
-                              Shadow(
-                                color: Colors.black,
-                                blurRadius: 10,
-                              ),
-                            ],
+                            shadows: isDark
+                                ? [
+                                    const Shadow(
+                                      color: Colors.black,
+                                      blurRadius: 10,
+                                    ),
+                                  ]
+                                : [],
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${album.numOfSongs} songs',
+                          isLikedSongsAlbum
+                              ? 'Special Collection'
+                              : '${album.numOfSongs} songs',
                           style: TextStyle(
-                            color: Colors.grey[500],
+                            color: isDark ? Colors.grey[500] : Colors.grey[500],
                             fontSize: 14,
                           ),
                         ),
@@ -169,21 +218,32 @@ class AlbumDetailScreen extends ConsumerWidget {
             data: (songs) {
               // Filter out hidden songs
               final visibleSongs = songs
-                  .where((song) =>
-                      !hiddenSongs.contains(song.id) && song.duration >= 60000)
+                  .where(
+                    (song) =>
+                        !hiddenSongs.contains(song.id) &&
+                        song.duration >= 60000,
+                  )
                   .toList();
 
               if (visibleSongs.isEmpty) {
-                return const SliverFillRemaining(
+                return SliverFillRemaining(
                   child: Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.music_off, size: 60, color: Colors.grey),
-                        SizedBox(height: 16),
+                        Icon(
+                          isLikedSongsAlbum
+                              ? Icons.favorite_border
+                              : Icons.music_off,
+                          size: 60,
+                          color: Colors.grey,
+                        ),
+                        const SizedBox(height: 16),
                         Text(
-                          'No songs in this album',
-                          style: TextStyle(color: Colors.grey),
+                          isLikedSongsAlbum
+                              ? 'No favorite songs yet'
+                              : 'No songs in this album',
+                          style: const TextStyle(color: Colors.grey),
                         ),
                       ],
                     ),
@@ -194,37 +254,40 @@ class AlbumDetailScreen extends ConsumerWidget {
               return SliverPadding(
                 padding: const EdgeInsets.only(bottom: 100),
                 sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      return SongTile(
-                        song: visibleSongs[index],
-                        onTap: () async {
-                          ref.read(currentSongProvider.notifier).state =
-                              visibleSongs[index];
-                          final audioService = ref.read(audioServiceProvider);
-                          await audioService.setPlaylist(visibleSongs, index);
-                          await audioService.play();
-                          ref.read(isPlayingProvider.notifier).state = true;
-
-                          if (context.mounted) {
-                            context.push('/player', extra: visibleSongs[index]);
-                          }
-                        },
-                        onLongPress: () {
-                          _showSongOptions(context, ref, visibleSongs[index]);
-                        },
-                      );
-                    },
-                    childCount: visibleSongs.length,
-                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    return SongTile(
+                      song: visibleSongs[index],
+                      onTap: () async {
+                        final selectedSong = visibleSongs[index];
+                        final selectedIndex = visibleSongs.indexWhere(
+                          (song) => song.id == selectedSong.id,
+                        );
+                        final startIndex = selectedIndex >= 0
+                            ? selectedIndex
+                            : 0;
+                        final audioHandler = ref.read(audioHandlerProvider);
+                        await audioHandler.setPlaylist(
+                          visibleSongs,
+                          startIndex,
+                        );
+                        await audioHandler.play();
+                      },
+                      onLongPress: () {
+                        _showSongOptions(
+                          context,
+                          ref,
+                          visibleSongs[index],
+                          isDark,
+                        );
+                      },
+                    );
+                  }, childCount: visibleSongs.length),
                 ),
               );
             },
             loading: () => const SliverFillRemaining(
               child: Center(
-                child: CircularProgressIndicator(
-                  color: Color(0xFF8B5CF6),
-                ),
+                child: CircularProgressIndicator(color: Color(0xFF8B5CF6)),
               ),
             ),
             error: (error, stack) => SliverFillRemaining(
@@ -248,9 +311,19 @@ class AlbumDetailScreen extends ConsumerWidget {
     );
   }
 
-  void _showSongOptions(BuildContext context, WidgetRef ref, SongModel song) {
+  void _showSongOptions(
+    BuildContext context,
+    WidgetRef ref,
+    SongModel song,
+    bool isDark,
+  ) {
     final hiddenSongs = ref.read(hiddenSongsProvider);
     final isHidden = hiddenSongs.contains(song.id);
+
+    final bgColor = isDark
+        ? const Color(0xFF1A1A1A).withValues(alpha: 0.95)
+        : Colors.white.withValues(alpha: 0.95);
+    final textColor = isDark ? Colors.white : const Color(0xFF1C1B1F);
 
     showModalBottomSheet(
       context: context,
@@ -262,17 +335,12 @@ class AlbumDetailScreen extends ConsumerWidget {
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF1A1A1A).withValues(alpha: 0.95),
-                    const Color(0xFF2D2D2D).withValues(alpha: 0.95),
-                  ],
-                ),
+                color: bgColor,
                 border: Border(
                   top: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: (isDark ? Colors.white : Colors.black).withValues(
+                      alpha: 0.1,
+                    ),
                     width: 1,
                   ),
                 ),
@@ -286,7 +354,7 @@ class AlbumDetailScreen extends ConsumerWidget {
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.grey[600],
+                        color: isDark ? Colors.grey[700] : Colors.grey[300],
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -298,7 +366,7 @@ class AlbumDetailScreen extends ConsumerWidget {
                       ),
                       title: Text(
                         isHidden ? 'Unhide Song' : 'Hide Song',
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: textColor),
                       ),
                       onTap: () {
                         ref
@@ -308,8 +376,13 @@ class AlbumDetailScreen extends ConsumerWidget {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                                isHidden ? 'Song unhidden' : 'Song hidden'),
+                              isHidden ? 'Song unhidden' : 'Song hidden',
+                            ),
                             backgroundColor: const Color(0xFF8B5CF6),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         );
                       },
