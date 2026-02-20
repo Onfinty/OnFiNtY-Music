@@ -26,7 +26,7 @@ void main() async {
         androidNotificationChannelName: 'OnFiNtY Music',
         androidNotificationOngoing: false,
         androidStopForegroundOnPause: true,
-        androidNotificationIcon: 'mipmap/ic_launcher',
+        androidNotificationIcon: 'drawable/ic_stat_onfinty_logo_nobg',
       ),
     );
     debugPrint('[OnFiNtY] AudioService initialized successfully');
