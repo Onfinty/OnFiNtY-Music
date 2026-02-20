@@ -105,18 +105,47 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     }
   }
 
-  List<Color> _buildMiniGradient(bool isDark) {
+  List<Color> _buildMiniGradient(bool isDark, bool useFullGradient) {
+    if (useFullGradient && _activePalette.gradientColors.length >= 2) {
+      return ArtworkPaletteService.buildDetailedGradient(
+        _activePalette.gradientColors,
+        targetCount: 70,
+      );
+    }
+
+    final source = <Color>[
+      _activePalette.gradientPrimary,
+      _activePalette.gradientSecondary,
+    ];
+    final endIndex = source.length <= 2
+        ? source.length - 1
+        : (source.length * 0.72).floor().clamp(1, source.length - 1);
+    final startColor = source.first;
+    final endColor = source[endIndex];
+
     if (isDark) {
       return <Color>[
-        _activePalette.gradientPrimary.withValues(alpha: 0.48),
-        Color.lerp(_activePalette.gradientSecondary, Colors.black, 0.35)!,
+        startColor.withValues(alpha: 0.48),
+        Color.lerp(endColor, Colors.black, 0.35)!,
       ];
     }
 
     return <Color>[
-      Color.lerp(_activePalette.gradientPrimary, Colors.white, 0.48)!,
-      Color.lerp(_activePalette.gradientSecondary, Colors.white, 0.7)!,
+      Color.lerp(startColor, Colors.white, 0.48)!,
+      Color.lerp(endColor, Colors.white, 0.7)!,
     ];
+  }
+
+  Color _sampleGradientColor(List<Color> colors, double t) {
+    if (colors.length == 1) {
+      return colors.first;
+    }
+
+    final clamped = t.clamp(0.0, 1.0);
+    final scaled = clamped * (colors.length - 1);
+    final leftIndex = scaled.floor().clamp(0, colors.length - 2);
+    final localT = scaled - leftIndex;
+    return Color.lerp(colors[leftIndex], colors[leftIndex + 1], localT)!;
   }
 
   @override
@@ -127,6 +156,9 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     final currentDurationAsync = ref.watch(currentDurationProvider);
     final audioHandler = ref.watch(audioHandlerProvider);
     final isDark = ref.watch(isDarkModeProvider);
+    final useFullArtworkGradientTheme = ref.watch(
+      artworkFullGradientThemeProvider,
+    );
 
     final currentSong = currentSongAsync.value;
     final isPlaying = isPlayingAsync.value ?? false;
@@ -147,12 +179,11 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     }
 
     final glowColor = _activePalette.glowColor;
-    final miniGradient = _buildMiniGradient(isDark);
-    final contentBackground = Color.lerp(
-      miniGradient[0],
-      miniGradient[1],
-      0.45,
-    )!;
+    final miniGradient = _buildMiniGradient(
+      isDark,
+      useFullArtworkGradientTheme,
+    );
+    final contentBackground = _sampleGradientColor(miniGradient, 0.45);
     final primaryTextColor = ArtworkPaletteService.readableText(
       contentBackground,
     );

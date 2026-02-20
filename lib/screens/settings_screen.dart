@@ -131,6 +131,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final cacheCount = CachedArtworkWidget.getCacheCount();
     final isDark = ref.watch(isDarkModeProvider);
     final useDynamicArtworkTheme = ref.watch(dynamicArtworkThemeProvider);
+    final useFullArtworkGradientTheme = ref.watch(
+      artworkFullGradientThemeProvider,
+    );
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -262,6 +265,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         .read(dynamicArtworkThemeProvider.notifier)
                         .setEnabled(value);
                   },
+                  activeColor: iconColor,
+                ),
+              ),
+              ListTile(
+                leading: Icon(Icons.gradient_rounded, color: iconColor),
+                title: Text(
+                  'Full Artwork Gradient',
+                  style: TextStyle(color: textColor),
+                ),
+                subtitle: Text(
+                  useDynamicArtworkTheme
+                      ? (useFullArtworkGradientTheme
+                            ? 'Uses all extracted artwork colors for gradients'
+                            : 'Uses focused accent colors only')
+                      : 'Enable Dynamic Artwork Theme first',
+                  style: TextStyle(color: subtitleColor),
+                ),
+                trailing: Switch(
+                  value: useFullArtworkGradientTheme,
+                  onChanged: useDynamicArtworkTheme
+                      ? (value) {
+                          ref
+                              .read(artworkFullGradientThemeProvider.notifier)
+                              .setEnabled(value);
+                        }
+                      : null,
                   activeColor: iconColor,
                 ),
               ),
@@ -646,6 +675,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ref.invalidate(hiddenSongsProvider);
                 ref.invalidate(themeModeProvider);
                 ref.invalidate(dynamicArtworkThemeProvider);
+                ref.invalidate(artworkFullGradientThemeProvider);
 
                 if (context.mounted) {
                   Navigator.pop(context);

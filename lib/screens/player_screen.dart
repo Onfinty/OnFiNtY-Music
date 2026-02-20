@@ -134,52 +134,55 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  List<Color> _buildBackgroundGradient(bool isDark) {
+  List<Color> _buildBackgroundGradient(bool isDark, bool useFullGradient) {
+    if (useFullGradient && _activePalette.gradientColors.length >= 3) {
+      return ArtworkPaletteService.buildDetailedGradient(
+        _activePalette.gradientColors,
+        targetCount: 70,
+      );
+    }
+
+    final source = <Color>[
+      _activePalette.gradientPrimary,
+      _activePalette.glowColor,
+      _activePalette.gradientSecondary,
+    ];
+    final first = source.first;
+    final middle = source[source.length ~/ 2];
+    final last = source.last;
+
     if (isDark) {
-      final topColor = Color.lerp(
-        _activePalette.gradientPrimary,
-        Colors.black,
-        0.22,
-      )!;
-      final middleColor = Color.lerp(
-        _activePalette.gradientSecondary,
-        Colors.black,
-        0.5,
-      )!;
-      final bottomColor = Color.lerp(
-        _activePalette.gradientSecondary,
-        Colors.black,
-        0.82,
-      )!;
+      final topColor = Color.lerp(first, Colors.black, 0.22)!;
+      final middleColor = Color.lerp(middle, Colors.black, 0.5)!;
+      final bottomColor = Color.lerp(last, Colors.black, 0.82)!;
 
       return <Color>[topColor, middleColor, bottomColor];
     }
 
-    final topColor = Color.lerp(
-      _activePalette.gradientPrimary,
-      Colors.white,
-      0.18,
-    )!;
-    final middleColor = Color.lerp(
-      _activePalette.gradientSecondary,
-      Colors.white,
-      0.35,
-    )!;
-    final bottomColor = Color.lerp(
-      _activePalette.gradientSecondary,
-      Colors.white,
-      0.58,
-    )!;
+    final topColor = Color.lerp(first, Colors.white, 0.18)!;
+    final middleColor = Color.lerp(middle, Colors.white, 0.35)!;
+    final bottomColor = Color.lerp(last, Colors.white, 0.58)!;
 
     return <Color>[topColor, middleColor, bottomColor];
   }
 
-  Color _sampleGradientColor(List<Color> colors, double t) {
-    final clamped = t.clamp(0.0, 1.0);
-    if (clamped <= 0.5) {
-      return Color.lerp(colors[0], colors[1], clamped * 2)!;
+  List<double> _buildEvenStops(int count) {
+    if (count <= 1) {
+      return const <double>[0.0];
     }
-    return Color.lerp(colors[1], colors[2], (clamped - 0.5) * 2)!;
+    return List<double>.generate(count, (index) => index / (count - 1));
+  }
+
+  Color _sampleGradientColor(List<Color> colors, double t) {
+    if (colors.length == 1) {
+      return colors.first;
+    }
+
+    final clamped = t.clamp(0.0, 1.0);
+    final scaled = clamped * (colors.length - 1);
+    final leftIndex = scaled.floor().clamp(0, colors.length - 2);
+    final localT = scaled - leftIndex;
+    return Color.lerp(colors[leftIndex], colors[leftIndex + 1], localT)!;
   }
 
   // ─── Gesture handlers ───
@@ -251,6 +254,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final audioEffectsAsync = ref.watch(audioEffectsProvider);
     final hiddenSongs = ref.watch(hiddenSongsProvider);
     final isDark = ref.watch(isDarkModeProvider);
+    final useFullArtworkGradientTheme = ref.watch(
+      artworkFullGradientThemeProvider,
+    );
 
     final currentSong = currentSongAsync.value;
     final isPlaying = isPlayingAsync.value ?? false;
@@ -313,7 +319,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final dragOpacity = 1.0 - (dragDismissProgress * 0.5);
 
     // ─── Theme Colors ───
-    final bgGradient = _buildBackgroundGradient(isDark);
+    final bgGradient = _buildBackgroundGradient(
+      isDark,
+      useFullArtworkGradientTheme,
+    );
     final topBackground = _sampleGradientColor(bgGradient, 0.16);
     final middleBackground = _sampleGradientColor(bgGradient, 0.52);
     final bottomBackground = _sampleGradientColor(bgGradient, 0.84);
@@ -370,7 +379,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  stops: const [0.0, 0.46, 1.0],
+                  stops: _buildEvenStops(bgGradient.length),
                   colors: bgGradient,
                 ),
               ),

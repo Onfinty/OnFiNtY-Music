@@ -14,28 +14,36 @@ class SongPalette {
   final Color glowColor;
   final Color gradientPrimary;
   final Color gradientSecondary;
+  final List<Color> gradientColors;
 
   const SongPalette({
     required this.glowColor,
     required this.gradientPrimary,
     required this.gradientSecondary,
+    required this.gradientColors,
   });
 
   static const SongPalette fallback = SongPalette(
     glowColor: Color(0xFF8B5CF6),
     gradientPrimary: Color(0xFF8B5CF6),
     gradientSecondary: Color(0xFF4C1D95),
+    gradientColors: <Color>[
+      Color(0xFF8B5CF6),
+      Color(0xFF6D28D9),
+      Color(0xFF4C1D95),
+    ],
   );
 
-  Map<String, int> toStorageMap() {
-    return <String, int>{
+  Map<String, dynamic> toStorageMap() {
+    return <String, dynamic>{
       'glow': glowColor.value,
       'primary': gradientPrimary.value,
       'secondary': gradientSecondary.value,
+      'stops': gradientColors.map((color) => color.value).toList(),
     };
   }
 
-  factory SongPalette.fromStorageMap(Map<String, int> map) {
+  factory SongPalette.fromStorageMap(Map<String, dynamic> map) {
     final glow = map['glow'];
     final primary = map['primary'];
     final secondary = map['secondary'];
@@ -43,11 +51,39 @@ class SongPalette {
       return SongPalette.fallback;
     }
 
+    final stops = <Color>[];
+    final rawStops = map['stops'];
+    if (rawStops is List) {
+      for (final value in rawStops) {
+        if (value is int) {
+          stops.add(Color(value));
+        }
+      }
+    }
+
+    final resolvedStops = stops.length >= 3
+        ? stops
+        : <Color>[Color(primary), Color(secondary), Color(glow)];
+
     return SongPalette(
       glowColor: Color(glow),
       gradientPrimary: Color(primary),
       gradientSecondary: Color(secondary),
+      gradientColors: resolvedStops,
     );
+  }
+
+  static bool _sameColorSequence(List<Color> first, List<Color> second) {
+    if (first.length != second.length) {
+      return false;
+    }
+
+    for (var index = 0; index < first.length; index++) {
+      if (first[index].value != second[index].value) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @override
@@ -58,12 +94,17 @@ class SongPalette {
     return other is SongPalette &&
         other.glowColor == glowColor &&
         other.gradientPrimary == gradientPrimary &&
-        other.gradientSecondary == gradientSecondary;
+        other.gradientSecondary == gradientSecondary &&
+        _sameColorSequence(other.gradientColors, gradientColors);
   }
 
   @override
-  int get hashCode =>
-      Object.hash(glowColor, gradientPrimary, gradientSecondary);
+  int get hashCode => Object.hash(
+    glowColor,
+    gradientPrimary,
+    gradientSecondary,
+    Object.hashAll(gradientColors.map((color) => color.value)),
+  );
 }
 
 class ArtworkPaletteService {
@@ -78,6 +119,7 @@ class ArtworkPaletteService {
   final Map<int, Future<SongPalette>> _inFlight = <int, Future<SongPalette>>{};
 
   static const int _maxCacheEntries = 320;
+  static const int _detailedGradientStopCount = 70;
   static const Duration _persistDebounceDuration = Duration(milliseconds: 300);
 
   bool _cacheRestored = false;
@@ -205,7 +247,7 @@ class ArtworkPaletteService {
   Future<SongPalette> _extractPalette(Uint8List artworkBytes) async {
     final palette = await PaletteGenerator.fromImageProvider(
       MemoryImage(artworkBytes),
-      maximumColorCount: 30,
+      maximumColorCount: 64,
     );
 
     final dominantColor = _pickAnchorColor(palette);
@@ -215,11 +257,18 @@ class ArtworkPaletteService {
       dominantColor,
       glowColor,
     );
+    final gradientStops = _buildGradientStops(
+      palette,
+      primary: dominantColor,
+      secondary: secondaryColor,
+      glow: glowColor,
+    );
 
     return SongPalette(
       glowColor: _tuneGlowColor(glowColor),
       gradientPrimary: _tunePrimaryColor(dominantColor),
       gradientSecondary: _tuneSecondaryColor(secondaryColor),
+      gradientColors: gradientStops,
     );
   }
 
@@ -394,6 +443,54 @@ class ArtworkPaletteService {
     return _darken(primary, factor: 0.62);
   }
 
+  List<Color> _buildGradientStops(
+    PaletteGenerator palette, {
+    required Color primary,
+    required Color secondary,
+    required Color glow,
+  }) {
+    final sorted = [...palette.paletteColors]
+      ..sort((a, b) => b.population.compareTo(a.population));
+    final stops = <Color>[];
+
+    void pushIfDistinct(Color color) {
+      final tuned = _tuneGradientStop(color);
+      if (stops.isEmpty ||
+          stops.every((existing) => _colorDistance(existing, tuned) >= 0.08)) {
+        stops.add(tuned);
+      }
+    }
+
+    pushIfDistinct(primary);
+    pushIfDistinct(glow);
+    pushIfDistinct(secondary);
+
+    for (final swatch in sorted) {
+      pushIfDistinct(swatch.color);
+    }
+
+    if (stops.length < 3) {
+      pushIfDistinct(_darken(primary, factor: 0.72));
+    }
+    if (stops.length < 3) {
+      pushIfDistinct(_darken(primary, factor: 0.55));
+    }
+
+    final extractedStops = stops.toList(growable: false);
+    return buildDetailedGradient(
+      extractedStops,
+      targetCount: _detailedGradientStopCount,
+    );
+  }
+
+  Color _tuneGradientStop(Color source) {
+    final hsl = HSLColor.fromColor(source);
+    return hsl
+        .withSaturation((hsl.saturation * 1.04).clamp(0.16, 0.96))
+        .withLightness(hsl.lightness.clamp(0.12, 0.86))
+        .toColor();
+  }
+
   Color _tuneGlowColor(Color source) {
     final hsl = HSLColor.fromColor(source);
     return hsl
@@ -487,7 +584,7 @@ class ArtworkPaletteService {
         return;
       }
 
-      final serialized = <int, Map<String, int>>{};
+      final serialized = <int, Map<String, dynamic>>{};
       for (final entry in _paletteCache.entries) {
         serialized[entry.key] = entry.value.toStorageMap();
       }
@@ -565,5 +662,36 @@ class ArtworkPaletteService {
   static Color adaptiveBorderColor(Color background, {required bool isDark}) {
     final base = readableText(background, minContrast: 2.0);
     return isDark ? base.withValues(alpha: 0.18) : base.withValues(alpha: 0.14);
+  }
+
+  static List<Color> buildDetailedGradient(
+    List<Color> source, {
+    int targetCount = _detailedGradientStopCount,
+  }) {
+    if (source.isEmpty) {
+      return <Color>[
+        SongPalette.fallback.gradientPrimary,
+        SongPalette.fallback.gradientSecondary,
+      ];
+    }
+
+    if (targetCount <= 2) {
+      return <Color>[source.first, source.last];
+    }
+
+    if (source.length == 1) {
+      return List<Color>.filled(targetCount, source.first, growable: false);
+    }
+
+    final detailed = <Color>[];
+    for (var index = 0; index < targetCount; index++) {
+      final t = index / (targetCount - 1);
+      final scaled = t * (source.length - 1);
+      final left = scaled.floor().clamp(0, source.length - 2);
+      final localT = scaled - left;
+      detailed.add(Color.lerp(source[left], source[left + 1], localT)!);
+    }
+
+    return detailed;
   }
 }

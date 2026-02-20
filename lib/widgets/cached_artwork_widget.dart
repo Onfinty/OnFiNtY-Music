@@ -1,4 +1,6 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
@@ -43,6 +45,7 @@ class CachedArtworkWidget extends StatefulWidget {
 }
 
 class _CachedArtworkWidgetState extends State<CachedArtworkWidget> {
+  static final OnAudioQuery _audioQuery = OnAudioQuery();
   static final Map<String, Uint8List> _artworkCache = {};
   static const int _maxCacheSize = 50 * 1024 * 1024; // 50MB max cache
   static int _currentCacheSize = 0;
@@ -60,20 +63,53 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget> {
   @override
   void didUpdateWidget(CachedArtworkWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.id != widget.id) {
+    if (oldWidget.id != widget.id ||
+        oldWidget.type != widget.type ||
+        oldWidget.width != widget.width ||
+        oldWidget.height != widget.height ||
+        oldWidget.quality != widget.quality) {
+      _cachedImage = null;
+      _isLoading = true;
+      _hasError = false;
       _loadArtwork();
     }
   }
 
+  String _dimensionKey(double value) {
+    if (!value.isFinite || value <= 0) {
+      return 'auto';
+    }
+    return value.round().toString();
+  }
+
   String get _cacheKey =>
-      '${widget.type.name}_${widget.id}_${widget.width.toInt()}x${widget.height.toInt()}';
+      '${widget.type.name}_${widget.id}_${_dimensionKey(widget.width)}x'
+      '${_dimensionKey(widget.height)}_q${widget.quality.clamp(40, 100)}';
+
+  int _resolveArtworkRequestSize() {
+    final dimensions = <double>[
+      if (widget.width.isFinite && widget.width > 0) widget.width,
+      if (widget.height.isFinite && widget.height > 0) widget.height,
+    ];
+    if (dimensions.isEmpty) {
+      return 300;
+    }
+
+    final maxDimension = dimensions.reduce(math.max);
+    final requested = (maxDimension * 2).round();
+    return requested.clamp(96, 640).toInt();
+  }
 
   Future<void> _loadArtwork() async {
     // Check cache first
-    if (_artworkCache.containsKey(_cacheKey)) {
+    final cached = _artworkCache[_cacheKey];
+    if (cached != null) {
+      // Refresh entry order to approximate LRU cache behavior.
+      _artworkCache.remove(_cacheKey);
+      _artworkCache[_cacheKey] = cached;
       if (mounted) {
         setState(() {
-          _cachedImage = _artworkCache[_cacheKey];
+          _cachedImage = cached;
           _isLoading = false;
           _hasError = false;
         });
@@ -82,18 +118,14 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget> {
     }
 
     try {
-      // Request higher quality for larger images
-      final requestedQuality = widget.width > 200
-          ? 100
-          : widget.width > 100
-          ? 90
-          : 80;
+      final requestedQuality = widget.quality.clamp(40, 100).toInt();
+      final requestSize = _resolveArtworkRequestSize();
 
-      final artwork = await OnAudioQuery().queryArtwork(
+      final artwork = await _audioQuery.queryArtwork(
         widget.id,
         widget.type,
         quality: requestedQuality,
-        size: widget.width > 200 ? 500 : 200, // Request larger source image
+        size: requestSize,
       );
 
       if (artwork != null && artwork.isNotEmpty) {
@@ -148,6 +180,14 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final cacheWidth = widget.width.isFinite && widget.width > 0
+        ? (widget.width * devicePixelRatio).round()
+        : null;
+    final cacheHeight = widget.height.isFinite && widget.height > 0
+        ? (widget.height * devicePixelRatio).round()
+        : null;
+
     Widget child;
 
     if (_isLoading) {
@@ -207,9 +247,13 @@ class _CachedArtworkWidgetState extends State<CachedArtworkWidget> {
         width: widget.width,
         height: widget.height,
         fit: widget.fit,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight,
         gaplessPlayback: true,
-        filterQuality: FilterQuality.high,
-        isAntiAlias: true,
+        filterQuality: (widget.width > 140 || widget.height > 140)
+            ? FilterQuality.medium
+            : FilterQuality.low,
+        isAntiAlias: false,
         errorBuilder: (context, error, stackTrace) {
           return widget.nullArtworkWidget ??
               Container(

@@ -7,6 +7,7 @@ import 'providers/music_provider.dart';
 import 'router/app_router.dart';
 import 'services/audio_handler.dart';
 import 'services/artwork_palette_service.dart';
+import 'services/performance_service.dart';
 import 'services/preferences_service.dart';
 
 void main() async {
@@ -18,24 +19,42 @@ void main() async {
 
   // Initialize AudioHandler via AudioService.init() for background playback
   OnFinityAudioHandler? audioHandler;
-  try {
-    audioHandler = await AudioService.init(
-      builder: () => OnFinityAudioHandler(),
-      config: AudioServiceConfig(
-        androidNotificationChannelId: 'com.onfinity.music.audio',
-        androidNotificationChannelName: 'OnFiNtY Music',
-        androidNotificationOngoing: false,
-        androidStopForegroundOnPause: true,
-        androidNotificationIcon: 'drawable/ic_stat_onfinty_logo_nobg',
-      ),
+  var initializedWithAudioService = false;
+
+  for (var attempt = 1; attempt <= 2 && audioHandler == null; attempt++) {
+    try {
+      audioHandler = await AudioService.init(
+        builder: () => OnFinityAudioHandler(),
+        config: AudioServiceConfig(
+          androidNotificationChannelId: 'com.onfinity.music.audio',
+          androidNotificationChannelName: 'OnFiNtY Music',
+          androidNotificationOngoing: false,
+          androidStopForegroundOnPause: false,
+          androidNotificationIcon: 'drawable/ic_stat_onfinty_logo_nobg',
+        ),
+      );
+      initializedWithAudioService = true;
+      debugPrint(
+        '[OnFiNtY] AudioService initialized successfully (attempt $attempt)',
+      );
+    } catch (e, st) {
+      debugPrint('[OnFiNtY] AudioService init error (attempt $attempt): $e');
+      debugPrint('[OnFiNtY] Stack trace: $st');
+      if (attempt == 1) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+    }
+  }
+
+  if (!initializedWithAudioService) {
+    debugPrint(
+      '[OnFiNtY] Falling back to local audio handler. '
+      'Background notification controls may be unavailable.',
     );
-    debugPrint('[OnFiNtY] AudioService initialized successfully');
-  } catch (e, st) {
-    debugPrint('[OnFiNtY] AudioService init error: $e');
-    debugPrint('[OnFiNtY] Stack trace: $st');
-    // Create a fallback handler so the app still runs
     audioHandler = OnFinityAudioHandler();
   }
+
+  final resolvedAudioHandler = audioHandler ?? OnFinityAudioHandler();
 
   // Set system UI overlay style
   SystemChrome.setSystemUIOverlayStyle(
@@ -53,7 +72,7 @@ void main() async {
 
   runApp(
     ProviderScope(
-      overrides: [audioHandlerProvider.overrideWithValue(audioHandler)],
+      overrides: [audioHandlerProvider.overrideWithValue(resolvedAudioHandler)],
       child: const OnFinityApp(),
     ),
   );
@@ -67,14 +86,29 @@ class OnFinityApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
     final isDark = ref.watch(isDarkModeProvider);
     final useDynamicArtworkTheme = ref.watch(dynamicArtworkThemeProvider);
+    final useFullArtworkGradientTheme = ref.watch(
+      artworkFullGradientThemeProvider,
+    );
     final dynamicPalette = ref.watch(currentThemePaletteProvider);
-
-    // Update status bar based on theme
-    SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-      ),
+    final themeAnimationDuration = PerformanceService.tunedDuration(
+      const Duration(milliseconds: 620),
+      lowFidelityScale: 0.5,
+      minMs: 180,
+    );
+    final systemUiStyle = SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+    );
+    final dynamicGradientStops = _buildDynamicGradientStops(
+      dynamicPalette,
+      isDark: isDark,
+      useFullGradient: useDynamicArtworkTheme && useFullArtworkGradientTheme,
+    );
+    final transitionKey = ValueKey<String>(
+      '${isDark ? 'dark' : 'light'}|'
+      '${useDynamicArtworkTheme ? 1 : 0}|'
+      '${useFullArtworkGradientTheme ? 1 : 0}|'
+      '${dynamicPalette.hashCode}',
     );
 
     return MaterialApp.router(
@@ -82,18 +116,74 @@ class OnFinityApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: _buildLightTheme(
         dynamicPalette: useDynamicArtworkTheme ? dynamicPalette : null,
+        useFullGradient: useFullArtworkGradientTheme,
       ),
       darkTheme: _buildDarkTheme(
         dynamicPalette: useDynamicArtworkTheme ? dynamicPalette : null,
+        useFullGradient: useFullArtworkGradientTheme,
       ),
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
       routerConfig: router,
-      themeAnimationDuration: const Duration(milliseconds: 420),
+      themeAnimationDuration: themeAnimationDuration,
       themeAnimationCurve: Curves.easeInOutCubic,
+      builder: (context, child) {
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: systemUiStyle,
+          child: _ThemeTransitionShell(
+            transitionSeed: transitionKey.value,
+            isDark: isDark,
+            enabled: useDynamicArtworkTheme,
+            useFullGradient: useFullArtworkGradientTheme,
+            colors: dynamicGradientStops,
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+      },
     );
   }
 
-  ThemeData _buildDarkTheme({SongPalette? dynamicPalette}) {
+  List<Color> _buildDynamicGradientStops(
+    SongPalette palette, {
+    required bool isDark,
+    required bool useFullGradient,
+  }) {
+    if (useFullGradient && palette.gradientColors.length >= 3) {
+      return ArtworkPaletteService.buildDetailedGradient(
+        palette.gradientColors,
+        targetCount: 70,
+      );
+    }
+
+    final source = <Color>[
+      palette.gradientPrimary,
+      palette.glowColor,
+      palette.gradientSecondary,
+    ];
+
+    final stops = <Color>[];
+    for (var index = 0; index < source.length; index++) {
+      final progress = source.length <= 1 ? 0.0 : index / (source.length - 1);
+      final blendTarget = isDark ? Colors.black : Colors.white;
+      final blendAmount = isDark
+          ? (0.26 + (progress * 0.46)).clamp(0.0, 0.92)
+          : (0.5 + (progress * 0.34)).clamp(0.0, 0.94);
+      stops.add(Color.lerp(source[index], blendTarget, blendAmount)!);
+    }
+
+    if (stops.length < 3) {
+      return <Color>[
+        palette.gradientPrimary,
+        palette.glowColor,
+        palette.gradientSecondary,
+      ];
+    }
+    return stops;
+  }
+
+  ThemeData _buildDarkTheme({
+    SongPalette? dynamicPalette,
+    required bool useFullGradient,
+  }) {
     if (dynamicPalette == null) {
       return ThemeData(
         brightness: Brightness.dark,
@@ -109,19 +199,23 @@ class OnFinityApp extends ConsumerWidget {
       );
     }
 
+    final gradientStops = _buildDynamicGradientStops(
+      dynamicPalette,
+      isDark: true,
+      useFullGradient: useFullGradient,
+    );
+    final primaryColor = dynamicPalette.gradientPrimary;
+    final secondaryColor = gradientStops[gradientStops.length ~/ 2];
+    final tertiaryColor = gradientStops.last;
     final seededScheme =
         ColorScheme.fromSeed(
-          seedColor: dynamicPalette.gradientPrimary,
+          seedColor: primaryColor,
           brightness: Brightness.dark,
         ).copyWith(
-          primary: dynamicPalette.gradientPrimary,
-          secondary: dynamicPalette.glowColor,
-          tertiary: dynamicPalette.gradientSecondary,
-          surface: Color.lerp(
-            dynamicPalette.gradientSecondary,
-            Colors.black,
-            0.72,
-          )!,
+          primary: primaryColor,
+          secondary: secondaryColor,
+          tertiary: tertiaryColor,
+          surface: Color.lerp(tertiaryColor, Colors.black, 0.72)!,
         );
     final colorScheme = seededScheme.copyWith(
       onPrimary: ArtworkPaletteService.readableText(seededScheme.primary),
@@ -133,16 +227,12 @@ class OnFinityApp extends ConsumerWidget {
     return ThemeData(
       brightness: Brightness.dark,
       primaryColor: colorScheme.primary,
-      scaffoldBackgroundColor: Color.lerp(
-        colorScheme.surface,
-        Colors.black,
-        0.35,
-      ),
+      scaffoldBackgroundColor: Color.lerp(tertiaryColor, Colors.black, 0.74),
       colorScheme: colorScheme,
       cardTheme: CardThemeData(
         color: colorScheme.surface.withValues(alpha: 0.92),
         elevation: 2,
-        shadowColor: dynamicPalette.glowColor.withValues(alpha: 0.2),
+        shadowColor: secondaryColor.withValues(alpha: 0.22),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       appBarTheme: AppBarTheme(
@@ -155,7 +245,10 @@ class OnFinityApp extends ConsumerWidget {
     );
   }
 
-  ThemeData _buildLightTheme({SongPalette? dynamicPalette}) {
+  ThemeData _buildLightTheme({
+    SongPalette? dynamicPalette,
+    required bool useFullGradient,
+  }) {
     if (dynamicPalette == null) {
       return ThemeData(
         brightness: Brightness.light,
@@ -186,28 +279,32 @@ class OnFinityApp extends ConsumerWidget {
       );
     }
 
+    final gradientStops = _buildDynamicGradientStops(
+      dynamicPalette,
+      isDark: false,
+      useFullGradient: useFullGradient,
+    );
+    final primaryColor = Color.lerp(
+      dynamicPalette.gradientPrimary,
+      Colors.black,
+      0.1,
+    );
+    final secondaryColor = gradientStops[gradientStops.length ~/ 2];
+    final tertiaryColor = gradientStops.last;
     final seededScheme =
         ColorScheme.fromSeed(
-          seedColor: dynamicPalette.gradientPrimary,
+          seedColor: primaryColor ?? dynamicPalette.gradientPrimary,
           brightness: Brightness.light,
         ).copyWith(
-          primary: Color.lerp(
-            dynamicPalette.gradientPrimary,
-            Colors.black,
-            0.1,
-          ),
-          secondary: dynamicPalette.glowColor,
-          tertiary: dynamicPalette.gradientSecondary,
-          surface: Color.lerp(
-            dynamicPalette.gradientPrimary,
-            Colors.white,
-            0.92,
-          )!,
+          primary: primaryColor,
+          secondary: secondaryColor,
+          tertiary: tertiaryColor,
+          surface: Color.lerp(gradientStops.first, Colors.white, 0.9)!,
           onSurface: const Color(0xFF1C1B1F),
           surfaceContainerHighest: Color.lerp(
-            dynamicPalette.gradientSecondary,
+            tertiaryColor,
             Colors.white,
-            0.86,
+            0.84,
           ),
         );
     final colorScheme = seededScheme.copyWith(
@@ -221,15 +318,15 @@ class OnFinityApp extends ConsumerWidget {
       brightness: Brightness.light,
       primaryColor: colorScheme.primary,
       scaffoldBackgroundColor: Color.lerp(
-        colorScheme.surface,
+        gradientStops.first,
         Colors.white,
-        0.4,
+        0.52,
       ),
       colorScheme: colorScheme,
       cardTheme: CardThemeData(
         color: colorScheme.surface,
         elevation: 2,
-        shadowColor: dynamicPalette.glowColor.withValues(alpha: 0.1),
+        shadowColor: secondaryColor.withValues(alpha: 0.12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       appBarTheme: AppBarTheme(
@@ -239,6 +336,96 @@ class OnFinityApp extends ConsumerWidget {
       ),
       fontFamily: 'Poppins',
       useMaterial3: true,
+    );
+  }
+}
+
+class _ThemeTransitionShell extends StatelessWidget {
+  const _ThemeTransitionShell({
+    required this.transitionSeed,
+    required this.isDark,
+    required this.enabled,
+    required this.useFullGradient,
+    required this.colors,
+    required this.child,
+  });
+
+  final Object transitionSeed;
+  final bool isDark;
+  final bool enabled;
+  final bool useFullGradient;
+  final List<Color> colors;
+  final Widget child;
+
+  List<double> _evenStops(int count) {
+    if (count <= 1) {
+      return const <double>[0.0];
+    }
+    return List<double>.generate(count, (index) => index / (count - 1));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled || colors.isEmpty) {
+      return child;
+    }
+
+    final overlayOpacity = isDark
+        ? (useFullGradient ? 0.22 : 0.16)
+        : (useFullGradient ? 0.16 : 0.1);
+
+    return Stack(
+      children: [
+        child,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: AnimatedSwitcher(
+              duration: PerformanceService.tunedDuration(
+                const Duration(milliseconds: 560),
+                lowFidelityScale: 0.52,
+                minMs: 180,
+              ),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (transitionChild, animation) {
+                final slide = Tween<Offset>(
+                  begin: const Offset(0, 0.06),
+                  end: Offset.zero,
+                ).animate(animation);
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: slide,
+                    child: transitionChild,
+                  ),
+                );
+              },
+              child: KeyedSubtree(
+                key: ValueKey<Object>(transitionSeed),
+                child: AnimatedOpacity(
+                  duration: PerformanceService.tunedDuration(
+                    const Duration(milliseconds: 520),
+                    lowFidelityScale: 0.55,
+                    minMs: 170,
+                  ),
+                  curve: Curves.easeInOutCubic,
+                  opacity: overlayOpacity,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: colors,
+                        stops: _evenStops(colors.length),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

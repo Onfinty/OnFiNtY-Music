@@ -338,6 +338,26 @@ class DynamicArtworkThemeNotifier extends StateNotifier<bool> {
   }
 }
 
+final artworkFullGradientThemeProvider =
+    StateNotifierProvider<ArtworkFullGradientThemeNotifier, bool>((ref) {
+      return ArtworkFullGradientThemeNotifier();
+    });
+
+class ArtworkFullGradientThemeNotifier extends StateNotifier<bool> {
+  ArtworkFullGradientThemeNotifier() : super(false) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    state = await PreferencesService.getUseArtworkFullGradientTheme();
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    state = enabled;
+    await PreferencesService.saveUseArtworkFullGradientTheme(enabled);
+  }
+}
+
 final currentThemePaletteProvider =
     StateNotifierProvider<CurrentThemePaletteNotifier, SongPalette>((ref) {
       return CurrentThemePaletteNotifier(ref);

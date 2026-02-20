@@ -27,10 +27,7 @@ class SongTile extends ConsumerWidget {
     final currentSong = currentSongAsync.value;
     final isPlaying = isPlayingAsync.value ?? false;
     final isCurrentSong = currentSong?.id == song.id;
-
-    final primaryColor = isDark
-        ? const Color(0xFF8B5CF6)
-        : const Color(0xFF7C3AED);
+    final primaryColor = Theme.of(context).colorScheme.primary;
 
     return RepaintBoundary(
       child: Padding(

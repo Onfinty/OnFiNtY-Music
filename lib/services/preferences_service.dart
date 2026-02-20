@@ -10,6 +10,8 @@ class PreferencesService {
   static const String _lastScanTimeKey = 'last_scan_time';
   static const String _themeModeKey = 'theme_mode';
   static const String _dynamicArtThemeKey = 'dynamic_art_theme';
+  static const String _dynamicArtFullGradientThemeKey =
+      'dynamic_art_full_gradient_theme';
   static const String _artworkPaletteCacheKey = 'artwork_palette_cache_v1';
   static const String _audioEffectsStateKey = 'audio_effects_state_v1';
 
@@ -264,25 +266,48 @@ class PreferencesService {
     }
   }
 
+  // Dynamic Artwork Full Gradient Theme
+  static Future<bool> getUseArtworkFullGradientTheme() async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return false;
+      return prefs.getBool(_dynamicArtFullGradientThemeKey) ?? false;
+    } catch (e) {
+      debugPrint('Error getting full artwork gradient theme: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> saveUseArtworkFullGradientTheme(bool enabled) async {
+    try {
+      final prefs = await _getPrefs();
+      if (prefs == null) return false;
+      return await prefs.setBool(_dynamicArtFullGradientThemeKey, enabled);
+    } catch (e) {
+      debugPrint('Error saving full artwork gradient theme: $e');
+      return false;
+    }
+  }
+
   // Artwork Palette Cache
-  static Future<Map<int, Map<String, int>>> getArtworkPaletteCache() async {
+  static Future<Map<int, Map<String, dynamic>>> getArtworkPaletteCache() async {
     try {
       final prefs = await _getPrefs();
       if (prefs == null) {
-        return <int, Map<String, int>>{};
+        return <int, Map<String, dynamic>>{};
       }
 
       final raw = prefs.getString(_artworkPaletteCacheKey);
       if (raw == null || raw.isEmpty) {
-        return <int, Map<String, int>>{};
+        return <int, Map<String, dynamic>>{};
       }
 
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
-        return <int, Map<String, int>>{};
+        return <int, Map<String, dynamic>>{};
       }
 
-      final parsed = <int, Map<String, int>>{};
+      final parsed = <int, Map<String, dynamic>>{};
       for (final entry in decoded.entries) {
         final songId = int.tryParse(entry.key);
         final value = entry.value;
@@ -294,23 +319,38 @@ class PreferencesService {
         final primary = value['primary'];
         final secondary = value['secondary'];
         if (glow is int && primary is int && secondary is int) {
-          parsed[songId] = <String, int>{
+          final parsedEntry = <String, dynamic>{
             'glow': glow,
             'primary': primary,
             'secondary': secondary,
           };
+
+          final stops = value['stops'];
+          if (stops is List) {
+            final parsedStops = <int>[];
+            for (final stop in stops) {
+              if (stop is int) {
+                parsedStops.add(stop);
+              }
+            }
+            if (parsedStops.isNotEmpty) {
+              parsedEntry['stops'] = parsedStops;
+            }
+          }
+
+          parsed[songId] = parsedEntry;
         }
       }
 
       return parsed;
     } catch (e) {
       debugPrint('Error reading artwork palette cache: $e');
-      return <int, Map<String, int>>{};
+      return <int, Map<String, dynamic>>{};
     }
   }
 
   static Future<bool> saveArtworkPaletteCache(
-    Map<int, Map<String, int>> cache,
+    Map<int, Map<String, dynamic>> cache,
   ) async {
     try {
       final prefs = await _getPrefs();
@@ -318,7 +358,7 @@ class PreferencesService {
         return false;
       }
 
-      final serializable = <String, Map<String, int>>{};
+      final serializable = <String, Map<String, dynamic>>{};
       for (final entry in cache.entries) {
         final value = entry.value;
         final glow = value['glow'];
@@ -333,6 +373,22 @@ class PreferencesService {
           'primary': primary,
           'secondary': secondary,
         };
+
+        final stops = value['stops'];
+        if (stops is List) {
+          final parsedStops = <int>[];
+          for (final stop in stops) {
+            if (stop is int) {
+              parsedStops.add(stop);
+            }
+          }
+          if (parsedStops.isNotEmpty) {
+            serializable[entry.key.toString()] = <String, dynamic>{
+              ...serializable[entry.key.toString()]!,
+              'stops': parsedStops,
+            };
+          }
+        }
       }
 
       return await prefs.setString(

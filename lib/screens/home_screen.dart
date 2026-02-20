@@ -1,7 +1,7 @@
 // ignore_for_file: prefer_single_quotes
 
+import 'dart:math' as math;
 import 'dart:ui';
-import 'package:draggable_scrollbar/draggable_scrollbar.dart';
 import 'package:fitapp/screens/album_detail_screen.dart';
 import 'package:fitapp/widgets/cached_artwork_widget.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +13,8 @@ import 'package:skeletonizer/skeletonizer.dart';
 import '../models/song_model.dart';
 import '../providers/music_provider.dart';
 import '../services/artwork_palette_service.dart';
+import '../services/performance_service.dart';
+import '../widgets/beautiful_draggable_scrollbar.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/song_tile.dart';
 
@@ -27,6 +29,10 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with SingleTickerProviderStateMixin {
+  static const int _initialSongBatchSize = 28;
+  static const int _songBatchSize = 20;
+  static const double _songLoadMoreThreshold = 320;
+
   MusicTab _currentTab = MusicTab.songs;
   int _lastTabIndex = 0;
   bool _tabSwitchForward = true;
@@ -36,10 +42,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _showSearch = false;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  int _visibleSongCount = 0;
+  int _songListTotalCount = 0;
+  String _songListToken = '';
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_handleSongListScroll);
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
@@ -49,9 +59,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           _lastTabIndex = targetIndex;
           _tabTransitionTick++;
           _currentTab = MusicTab.values[targetIndex];
-          if (_scrollController.hasClients) {
-            _scrollController.jumpTo(0);
+        });
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_scrollController.hasClients) {
+            return;
           }
+          _scrollController.jumpTo(_scrollController.position.minScrollExtent);
         });
       }
     });
@@ -59,6 +73,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   void dispose() {
+    _scrollController.removeListener(_handleSongListScroll);
     _scrollController.dispose();
     _tabController.dispose();
     _searchController.dispose();
@@ -81,42 +96,183 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     });
   }
 
-  List<Color> _buildHomeBackgroundGradient(SongPalette palette, bool isDark) {
-    if (isDark) {
-      return <Color>[
-        palette.gradientPrimary.withValues(alpha: 0.42),
-        Color.lerp(palette.gradientSecondary, Colors.black, 0.38)!,
-        const Color(0xFF040404),
-      ];
+  List<double> _buildEvenStops(int count) {
+    if (count <= 1) {
+      return const <double>[0.0];
+    }
+    return List<double>.generate(count, (index) => index / (count - 1));
+  }
+
+  List<Color> _buildHomeBackgroundGradient(
+    SongPalette palette,
+    bool isDark, {
+    required bool useFullGradient,
+  }) {
+    if (useFullGradient && palette.gradientColors.length >= 3) {
+      return ArtworkPaletteService.buildDetailedGradient(
+        palette.gradientColors,
+        targetCount: 70,
+      );
     }
 
-    return <Color>[
-      Color.lerp(palette.gradientPrimary, Colors.white, 0.66)!,
-      Color.lerp(palette.gradientSecondary, Colors.white, 0.84)!,
-      Colors.white,
-    ];
+    final source = <Color>[palette.gradientPrimary, palette.gradientSecondary];
+    final gradient = <Color>[];
+
+    for (var index = 0; index < source.length; index++) {
+      final progress = source.length <= 1 ? 0.0 : index / (source.length - 1);
+      final blend = isDark
+          ? (0.22 + (progress * 0.58)).clamp(0.0, 0.92)
+          : (0.56 + (progress * 0.34)).clamp(0.0, 0.94);
+      gradient.add(
+        Color.lerp(source[index], isDark ? Colors.black : Colors.white, blend)!,
+      );
+    }
+
+    if (gradient.length < 3) {
+      return isDark
+          ? <Color>[
+              palette.gradientPrimary.withValues(alpha: 0.42),
+              Color.lerp(palette.gradientSecondary, Colors.black, 0.38)!,
+              const Color(0xFF040404),
+            ]
+          : <Color>[
+              Color.lerp(palette.gradientPrimary, Colors.white, 0.66)!,
+              Color.lerp(palette.gradientSecondary, Colors.white, 0.84)!,
+              Colors.white,
+            ];
+    }
+
+    return gradient;
+  }
+
+  void _syncSongPagination({
+    required String listToken,
+    required int totalSongs,
+  }) {
+    _songListTotalCount = totalSongs;
+
+    if (_songListToken != listToken) {
+      _songListToken = listToken;
+      _visibleSongCount = math.min(totalSongs, _initialSongBatchSize);
+      return;
+    }
+
+    if (_visibleSongCount > totalSongs) {
+      _visibleSongCount = totalSongs;
+    }
+  }
+
+  void _handleSongListScroll() {
+    _loadMoreSongsIfNeeded();
+  }
+
+  void _loadMoreSongsIfNeeded({bool force = false}) {
+    if (!mounted || _currentTab == MusicTab.albums) {
+      return;
+    }
+
+    if (_visibleSongCount >= _songListTotalCount) {
+      return;
+    }
+
+    if (_scrollController.hasClients) {
+      final position = _scrollController.position;
+      final remainingExtent = position.maxScrollExtent - position.pixels;
+      if (!force && remainingExtent > _songLoadMoreThreshold) {
+        return;
+      }
+    } else if (!force) {
+      return;
+    }
+
+    final nextCount = math.min(
+      _visibleSongCount + _songBatchSize,
+      _songListTotalCount,
+    );
+    if (nextCount == _visibleSongCount) {
+      return;
+    }
+
+    setState(() {
+      _visibleSongCount = nextCount;
+    });
+  }
+
+  Widget _buildBackgroundDecor({
+    required SongPalette palette,
+    required bool isDark,
+  }) {
+    Widget buildOrb({required double size, required Color color}) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: <Color>[color, color.withValues(alpha: 0)],
+          ),
+        ),
+      );
+    }
+
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned(
+            top: -120,
+            right: -90,
+            child: buildOrb(
+              size: 320,
+              color: palette.gradientPrimary.withValues(
+                alpha: isDark ? 0.24 : 0.2,
+              ),
+            ),
+          ),
+          Positioned(
+            top: 140,
+            left: -120,
+            child: buildOrb(
+              size: 260,
+              color: palette.gradientSecondary.withValues(
+                alpha: isDark ? 0.2 : 0.16,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 60,
+            right: -130,
+            child: buildOrb(
+              size: 300,
+              color: palette.glowColor.withValues(alpha: isDark ? 0.18 : 0.14),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final filteredSongs = ref.watch(filteredSongsProvider);
+    final searchQuery = ref.watch(searchQueryProvider);
     final currentSongAsync = ref.watch(currentSongProvider);
     final hiddenSongs = ref.watch(hiddenSongsProvider);
     final currentSong = currentSongAsync.value;
     final isDark = ref.watch(isDarkModeProvider);
     final useDynamicArtworkTheme = ref.watch(dynamicArtworkThemeProvider);
+    final useFullArtworkGradientTheme = ref.watch(
+      artworkFullGradientThemeProvider,
+    );
     final dynamicPalette = ref.watch(currentThemePaletteProvider);
     final activePalette = useDynamicArtworkTheme
         ? dynamicPalette
         : SongPalette.fallback;
-    final homeGradient = _buildHomeBackgroundGradient(activePalette, isDark);
+    final homeGradient = _buildHomeBackgroundGradient(
+      activePalette,
+      isDark,
+      useFullGradient: useDynamicArtworkTheme && useFullArtworkGradientTheme,
+    );
     final headerBackground = Color.lerp(homeGradient[0], homeGradient[1], 0.3)!;
-    final headerTextColor = ArtworkPaletteService.readableText(
-      headerBackground,
-    );
-    final headerSubtitleColor = ArtworkPaletteService.readableMutedText(
-      headerBackground,
-    );
     final accentColor = ArtworkPaletteService.readableAccent(
       activePalette.glowColor,
       headerBackground,
@@ -129,82 +285,99 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       headerBackground,
       isDark: isDark,
     );
+    final songCount = filteredSongs.maybeWhen(
+      data: (songs) => songs.where((song) => song.duration >= 60000).length,
+      orElse: () => 0,
+    );
+    final lowFidelityMode = PerformanceService.useLowFidelityMode;
+    final homeAnimationDuration = PerformanceService.tunedDuration(
+      const Duration(milliseconds: 360),
+      lowFidelityScale: 0.55,
+      minMs: 120,
+    );
+    final tabSwitchDuration = PerformanceService.tunedDuration(
+      const Duration(milliseconds: 280),
+      lowFidelityScale: 0.55,
+      minMs: 120,
+    );
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: AnimatedContainer(
-        duration: const Duration(milliseconds: 360),
+        duration: homeAnimationDuration,
         curve: Curves.easeInOutCubic,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            stops: const <double>[0, 0.35, 1],
+            stops: _buildEvenStops(homeGradient.length),
             colors: homeGradient,
           ),
         ),
-        child: Column(
+        child: Stack(
           children: [
-            // ─── Premium Header ───
-            _buildHeader(
-              isDark: isDark,
-              palette: activePalette,
-              titleColor: headerTextColor,
-              subtitleColor: headerSubtitleColor,
-              accentColor: accentColor,
-              surfaceColor: surfaceColor,
-              borderColor: borderColor,
-            ),
+            _buildBackgroundDecor(palette: activePalette, isDark: isDark),
+            Column(
+              children: [
+                _buildHeader(
+                  isDark: isDark,
+                  palette: activePalette,
+                  songCount: songCount,
+                  accentColor: accentColor,
+                  surfaceColor: surfaceColor,
+                  borderColor: borderColor,
+                ),
+                _buildTabBar(
+                  isDark: isDark,
+                  palette: activePalette,
+                  accentColor: accentColor,
+                  surfaceColor: surfaceColor,
+                  borderColor: borderColor,
+                ),
+                _buildSearchBar(
+                  isDark: isDark,
+                  palette: activePalette,
+                  accentColor: accentColor,
+                  surfaceColor: surfaceColor,
+                  borderColor: borderColor,
+                ),
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: tabSwitchDuration,
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      if (lowFidelityMode) {
+                        return FadeTransition(opacity: animation, child: child);
+                      }
 
-            // ─── Animated Tab Bar ───
-            _buildTabBar(
-              isDark: isDark,
-              palette: activePalette,
-              accentColor: accentColor,
-              surfaceColor: surfaceColor,
-              borderColor: borderColor,
-            ),
-
-            // ─── Search Bar (Animated) ───
-            _buildSearchBar(
-              isDark: isDark,
-              accentColor: accentColor,
-              surfaceColor: surfaceColor,
-              borderColor: borderColor,
-            ),
-
-            // ─── Content ───
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 280),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) {
-                  final slide = Tween<Offset>(
-                    begin: Offset(_tabSwitchForward ? 0.05 : -0.05, 0),
-                    end: Offset.zero,
-                  ).animate(animation);
-                  return FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(position: slide, child: child),
-                  );
-                },
-                child: KeyedSubtree(
-                  key: ValueKey<String>(
-                    '${_currentTab.name}_$_tabTransitionTick',
-                  ),
-                  child: _buildTabContent(
-                    filteredSongs,
-                    hiddenSongs,
-                    isDark,
-                    accentColor,
+                      final slide = Tween<Offset>(
+                        begin: Offset(_tabSwitchForward ? 0.05 : -0.05, 0),
+                        end: Offset.zero,
+                      ).animate(animation);
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(position: slide, child: child),
+                      );
+                    },
+                    child: KeyedSubtree(
+                      key: ValueKey<String>(
+                        '${_currentTab.name}_$_tabTransitionTick',
+                      ),
+                      child: _buildTabContent(
+                        filteredSongs: filteredSongs,
+                        hiddenSongs: hiddenSongs,
+                        isDark: isDark,
+                        accentColor: accentColor,
+                        surfaceColor: surfaceColor,
+                        searchQuery: searchQuery,
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                if (currentSong != null) const MiniPlayer(),
+              ],
             ),
-
-            // ─── Mini Player ───
-            if (currentSong != null) const MiniPlayer(),
           ],
         ),
       ),
@@ -217,96 +390,170 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildHeader({
     required bool isDark,
     required SongPalette palette,
-    required Color titleColor,
-    required Color subtitleColor,
+    required int songCount,
     required Color accentColor,
     required Color surfaceColor,
     required Color borderColor,
   }) {
-    final filteredSongs = ref.watch(filteredSongsProvider);
-    final songCount = filteredSongs.when(
-      data: (songs) => songs.where((s) => s.duration >= 60000).length,
-      loading: () => 0,
-      error: (_, __) => 0,
+    final topPadding = MediaQuery.of(context).padding.top + 8;
+    final lowFidelityMode = PerformanceService.useLowFidelityMode;
+    final blurSigma = PerformanceService.tunedBlurSigma(18);
+    final titleColor = ArtworkPaletteService.readableAccent(
+      palette.gradientPrimary,
+      surfaceColor,
     );
+    final subtitleColor = ArtworkPaletteService.readableAccent(
+      palette.gradientSecondary,
+      surfaceColor,
+    ).withValues(alpha: 0.9);
+    final iconColor = ArtworkPaletteService.readableAccent(
+      palette.glowColor,
+      surfaceColor,
+    );
+    final logoForeground = ArtworkPaletteService.readableText(iconColor);
 
-    return Container(
-      padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 12,
-        left: 24,
-        right: 16,
-        bottom: 8,
-      ),
+    final headerPanel = Container(
       decoration: BoxDecoration(
+        color: surfaceColor.withValues(alpha: isDark ? 0.2 : 0.42),
+        borderRadius: BorderRadius.circular(22),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: <Color>[
-            palette.gradientPrimary.withValues(alpha: isDark ? 0.3 : 0.24),
-            Color.lerp(
-              palette.gradientSecondary,
-              isDark ? Colors.black : Colors.white,
-              isDark ? 0.5 : 0.74,
-            )!,
+            palette.gradientPrimary.withValues(alpha: isDark ? 0.22 : 0.16),
+            palette.gradientSecondary.withValues(alpha: isDark ? 0.12 : 0.08),
+            Colors.white.withValues(alpha: isDark ? 0.02 : 0.24),
           ],
         ),
+        border: Border.all(
+          color: borderColor.withValues(alpha: isDark ? 0.58 : 0.74),
+          width: 1,
+        ),
+        boxShadow: isDark
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.24),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: accentColor.withValues(alpha: 0.18),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
       ),
-      child: Row(
+      child: Stack(
         children: [
-          // Logo & Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Positioned(
+            left: 18,
+            right: 18,
+            top: 0,
+            child: Container(
+              height: 1.1,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                gradient: LinearGradient(
+                  colors: <Color>[
+                    Colors.transparent,
+                    iconColor.withValues(alpha: 0.66),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+            child: Row(
               children: [
-                ShaderMask(
-                  shaderCallback: (bounds) => LinearGradient(
-                    colors: <Color>[accentColor, palette.gradientPrimary],
-                  ).createShader(bounds),
-                  child: const Text(
-                    'OnFiNtY',
-                    style: TextStyle(
-                      fontFamily: 'Lobster',
-                      fontSize: 34,
-                      color: Colors.white,
-                      letterSpacing: 1,
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(15),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: <Color>[iconColor, palette.gradientPrimary],
                     ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$songCount songs in your library',
-                  style: TextStyle(
-                    color: subtitleColor,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: 0.2,
+                  child: Icon(
+                    Icons.graphic_eq_rounded,
+                    color: logoForeground,
+                    size: 28,
                   ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'OnFiNtY',
+                        style: TextStyle(
+                          color: titleColor,
+                          fontFamily: 'Orbitron',
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '$songCount songs in your library',
+                        style: TextStyle(
+                          color: subtitleColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildHeaderButton(
+                      icon: _showSearch ? Icons.close : Icons.search_rounded,
+                      onTap: _toggleSearch,
+                      isDark: isDark,
+                      accentColor: accentColor,
+                      backgroundColor: surfaceColor,
+                      borderColor: borderColor,
+                      iconColor: iconColor,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildHeaderButton(
+                      icon: Icons.settings_rounded,
+                      onTap: () => context.push('/settings'),
+                      isDark: isDark,
+                      accentColor: accentColor,
+                      backgroundColor: surfaceColor,
+                      borderColor: borderColor,
+                      iconColor: iconColor,
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-
-          // Action Buttons
-          _buildHeaderButton(
-            icon: _showSearch ? Icons.close : Icons.search_rounded,
-            onTap: _toggleSearch,
-            isDark: isDark,
-            accentColor: accentColor,
-            backgroundColor: surfaceColor,
-            borderColor: borderColor,
-            iconColor: titleColor,
-          ),
-          const SizedBox(width: 8),
-          _buildHeaderButton(
-            icon: Icons.settings_rounded,
-            onTap: () => context.push('/settings'),
-            isDark: isDark,
-            accentColor: accentColor,
-            backgroundColor: surfaceColor,
-            borderColor: borderColor,
-            iconColor: titleColor,
-          ),
         ],
+      ),
+    );
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, topPadding, 16, 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: lowFidelityMode || blurSigma <= 0
+            ? headerPanel
+            : BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+                child: headerPanel,
+              ),
       ),
     );
   }
@@ -320,26 +567,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required Color borderColor,
     required Color iconColor,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: borderColor, width: 1),
-          boxShadow: isDark
-              ? []
-              : [
-                  BoxShadow(
-                    color: accentColor.withValues(alpha: 0.14),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: Material(
+        color: Colors.transparent,
+        child: Ink(
+          decoration: BoxDecoration(
+            color: backgroundColor.withValues(alpha: isDark ? 0.24 : 0.44),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: borderColor.withValues(alpha: isDark ? 0.62 : 0.78),
+              width: 1,
+            ),
+            boxShadow: isDark
+                ? []
+                : [
+                    BoxShadow(
+                      color: accentColor.withValues(alpha: 0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+          ),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Icon(icon, color: iconColor, size: 21),
+          ),
         ),
-        child: Icon(icon, color: iconColor, size: 22),
       ),
     );
   }
@@ -349,66 +605,94 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildSearchBar({
     required bool isDark,
+    required SongPalette palette,
     required Color accentColor,
     required Color surfaceColor,
     required Color borderColor,
   }) {
-    final textColor = ArtworkPaletteService.readableText(surfaceColor);
-    final hintColor = ArtworkPaletteService.readableMutedText(surfaceColor);
+    final lowFidelityMode = PerformanceService.useLowFidelityMode;
+    final blurSigma = PerformanceService.tunedBlurSigma(16);
+    final textColor = ArtworkPaletteService.readableAccent(
+      palette.gradientPrimary,
+      surfaceColor,
+    );
+    final hintColor = ArtworkPaletteService.readableAccent(
+      palette.gradientSecondary,
+      surfaceColor,
+    ).withValues(alpha: 0.7);
+    final searchIconColor = ArtworkPaletteService.readableAccent(
+      palette.glowColor,
+      surfaceColor,
+    );
+
+    final searchPanel = Container(
+      decoration: BoxDecoration(
+        color: surfaceColor.withValues(alpha: isDark ? 0.22 : 0.42),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: borderColor.withValues(alpha: isDark ? 0.58 : 0.76),
+          width: 1,
+        ),
+        boxShadow: isDark
+            ? []
+            : [
+                BoxShadow(
+                  color: accentColor.withValues(alpha: 0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        cursorColor: searchIconColor,
+        onChanged: (value) {
+          ref.read(searchQueryProvider.notifier).state = value;
+        },
+        style: TextStyle(color: textColor, fontSize: 15),
+        decoration: InputDecoration(
+          hintText: 'Search your library...',
+          hintStyle: TextStyle(color: hintColor, fontSize: 14),
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: searchIconColor,
+            size: 21,
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 11,
+          ),
+        ),
+      ),
+    );
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
+      duration: PerformanceService.tunedDuration(
+        const Duration(milliseconds: 280),
+      ),
       curve: Curves.easeOutCubic,
       height: _showSearch ? 56 : 0,
       padding: _showSearch
-          ? const EdgeInsets.symmetric(horizontal: 20, vertical: 8)
+          ? const EdgeInsets.symmetric(horizontal: 16, vertical: 6)
           : EdgeInsets.zero,
       child: AnimatedOpacity(
         opacity: _showSearch ? 1.0 : 0.0,
-        duration: const Duration(milliseconds: 250),
+        duration: PerformanceService.tunedDuration(
+          const Duration(milliseconds: 220),
+        ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                color: surfaceColor,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: borderColor, width: 1),
-                boxShadow: isDark
-                    ? []
-                    : [
-                        BoxShadow(
-                          color: accentColor.withValues(alpha: 0.12),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-              ),
-              child: TextField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                onChanged: (value) {
-                  ref.read(searchQueryProvider.notifier).state = value;
-                },
-                style: TextStyle(color: textColor, fontSize: 15),
-                decoration: InputDecoration(
-                  hintText: 'Search songs, artists, albums...',
-                  hintStyle: TextStyle(color: hintColor, fontSize: 15),
-                  prefixIcon: Icon(
-                    Icons.search_rounded,
-                    color: accentColor,
-                    size: 22,
+          borderRadius: BorderRadius.circular(14),
+          child: lowFidelityMode || blurSigma <= 0
+              ? searchPanel
+              : BackdropFilter(
+                  filter: ImageFilter.blur(
+                    sigmaX: blurSigma,
+                    sigmaY: blurSigma,
                   ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
+                  child: searchPanel,
                 ),
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -424,55 +708,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required Color surfaceColor,
     required Color borderColor,
   }) {
-    final unselectedLabelColor = ArtworkPaletteService.readableMutedText(
+    final lowFidelityMode = PerformanceService.useLowFidelityMode;
+    final blurSigma = PerformanceService.tunedBlurSigma(14);
+    final unselectedLabelColor = ArtworkPaletteService.readableAccent(
+      palette.gradientSecondary,
+      surfaceColor,
+    ).withValues(alpha: 0.74);
+    final selectedLabelColor = ArtworkPaletteService.readableAccent(
+      palette.gradientPrimary,
       surfaceColor,
     );
-    final selectedLabelColor = ArtworkPaletteService.readableText(accentColor);
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+    final tabPanel = Container(
+      margin: const EdgeInsets.fromLTRB(16, 2, 16, 2),
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: surfaceColor,
+        color: surfaceColor.withValues(alpha: isDark ? 0.2 : 0.38),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor, width: 1),
-        boxShadow: isDark
-            ? []
-            : [
-                BoxShadow(
-                  color: accentColor.withValues(alpha: 0.1),
-                  blurRadius: 12,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+        border: Border.all(
+          color: borderColor.withValues(alpha: isDark ? 0.56 : 0.72),
+          width: 1,
+        ),
       ),
       child: TabBar(
         controller: _tabController,
         indicator: BoxDecoration(
           gradient: LinearGradient(
-            colors: <Color>[accentColor, palette.gradientPrimary],
+            colors: <Color>[
+              palette.gradientPrimary.withValues(alpha: isDark ? 0.68 : 0.42),
+              palette.glowColor.withValues(alpha: isDark ? 0.62 : 0.4),
+            ],
           ),
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: accentColor.withValues(alpha: 0.35),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: accentColor.withValues(alpha: isDark ? 0.42 : 0.28),
+            width: 1,
+          ),
         ),
         indicatorSize: TabBarIndicatorSize.tab,
-        indicatorPadding: const EdgeInsets.all(4),
         dividerColor: Colors.transparent,
         labelColor: selectedLabelColor,
         unselectedLabelColor: unselectedLabelColor,
         labelStyle: const TextStyle(
           fontWeight: FontWeight.w600,
-          fontSize: 14,
-          letterSpacing: 0.3,
+          fontSize: 13.5,
+          letterSpacing: 0.2,
         ),
         unselectedLabelStyle: const TextStyle(
           fontWeight: FontWeight.w500,
-          fontSize: 14,
+          fontSize: 13.5,
         ),
         tabs: const [
           Tab(text: 'Songs'),
@@ -481,54 +765,90 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ],
       ),
     );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: lowFidelityMode || blurSigma <= 0
+          ? tabPanel
+          : BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+              child: tabPanel,
+            ),
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // TAB CONTENT
   // ═══════════════════════════════════════════════════════════════════════════
-  Widget _buildTabContent(
-    AsyncValue<List<SongModel>> filteredSongs,
-    List<int> hiddenSongs,
-    bool isDark,
-    Color accentColor,
-  ) {
+  Widget _buildTabContent({
+    required AsyncValue<List<SongModel>> filteredSongs,
+    required List<int> hiddenSongs,
+    required bool isDark,
+    required Color accentColor,
+    required Color surfaceColor,
+    required String searchQuery,
+  }) {
     if (_currentTab == MusicTab.albums) {
+      _syncSongPagination(listToken: 'albums', totalSongs: 0);
       return _buildAlbumsView(isDark, accentColor);
     }
 
     return filteredSongs.when(
       data: (songs) {
-        List<SongModel> displaySongs;
-
-        if (_currentTab == MusicTab.hidden) {
-          displaySongs = songs
-              .where(
-                (song) =>
-                    hiddenSongs.contains(song.id) || song.duration < 60000,
-              )
-              .toList();
-        } else {
-          displaySongs = songs
-              .where(
-                (song) =>
-                    !hiddenSongs.contains(song.id) && song.duration >= 60000,
-              )
-              .toList();
-        }
+        final hiddenSongIds = hiddenSongs.toSet();
+        final displaySongs = _currentTab == MusicTab.hidden
+            ? songs
+                  .where(
+                    (song) =>
+                        hiddenSongIds.contains(song.id) ||
+                        song.duration < 60000,
+                  )
+                  .toList()
+            : songs
+                  .where(
+                    (song) =>
+                        !hiddenSongIds.contains(song.id) &&
+                        song.duration >= 60000,
+                  )
+                  .toList();
 
         if (displaySongs.isEmpty) {
+          _syncSongPagination(
+            listToken: '${_currentTab.index}|${searchQuery.trim()}|empty',
+            totalSongs: 0,
+          );
           return _buildEmptyState(isDark, accentColor);
         }
 
-        return DraggableScrollbar.semicircle(
+        final listToken =
+            '${_currentTab.index}|'
+            '${searchQuery.trim().toLowerCase()}|'
+            '${displaySongs.length}|'
+            '${displaySongs.first.id}|'
+            '${displaySongs.last.id}';
+        _syncSongPagination(
+          listToken: listToken,
+          totalSongs: displaySongs.length,
+        );
+        final visibleSongCount = math.min(
+          _visibleSongCount,
+          displaySongs.length,
+        );
+        final hasMoreSongs = visibleSongCount < displaySongs.length;
+
+        return BeautifulDraggableScrollbar(
           controller: _scrollController,
-          backgroundColor: accentColor,
-          scrollbarTimeToFade: const Duration(seconds: 2),
-          heightScrollThumb: 60.0,
+          thumbColor: accentColor,
+          thumbGlowColor: accentColor,
+          trackColor: isDark
+              ? Colors.white.withValues(alpha: 0.12)
+              : Colors.black.withValues(alpha: 0.08),
+          rightPadding: 6,
+          topBottomPadding: 12,
           child: ListView.builder(
             controller: _scrollController,
             physics: const BouncingScrollPhysics(),
-            itemCount: displaySongs.length,
+            itemCount: visibleSongCount + (hasMoreSongs ? 1 : 0),
             padding: const EdgeInsets.only(
               top: 8,
               bottom: 100,
@@ -536,27 +856,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               right: 12,
             ),
             itemBuilder: (context, index) {
+              if (index >= visibleSongCount) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) {
+                    return;
+                  }
+                  _loadMoreSongsIfNeeded(force: true);
+                });
+                return _buildSongLoadMoreIndicator(
+                  isDark: isDark,
+                  accentColor: accentColor,
+                  surfaceColor: surfaceColor,
+                );
+              }
+
               return SongTile(
                 song: displaySongs[index],
                 index: index,
                 onTap: () async {
-                  final selectedSong = displaySongs[index];
-                  final allSongs = _currentTab == MusicTab.hidden
-                      ? displaySongs
-                      : songs
-                            .where(
-                              (song) =>
-                                  !hiddenSongs.contains(song.id) &&
-                                  song.duration >= 60000,
-                            )
-                            .toList();
-                  final selectedIndex = allSongs.indexWhere(
-                    (song) => song.id == selectedSong.id,
-                  );
-                  final startIndex = selectedIndex >= 0 ? selectedIndex : 0;
-
                   final audioHandler = ref.read(audioHandlerProvider);
-                  await audioHandler.setPlaylist(allSongs, startIndex);
+                  await audioHandler.setPlaylist(displaySongs, index);
                   await audioHandler.play();
                 },
                 onLongPress: () {
@@ -574,6 +893,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       },
       loading: () => _buildLoadingSkeleton(isDark),
       error: (error, stack) => _buildErrorState(error, isDark, accentColor),
+    );
+  }
+
+  Widget _buildSongLoadMoreIndicator({
+    required bool isDark,
+    required Color accentColor,
+    required Color surfaceColor,
+  }) {
+    final textColor = ArtworkPaletteService.readableMutedText(surfaceColor);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      alignment: Alignment.center,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                accentColor.withValues(alpha: isDark ? 0.85 : 0.75),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'Loading more songs...',
+            style: TextStyle(
+              color: textColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
